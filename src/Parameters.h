@@ -1,6 +1,7 @@
 //Values below are just for initialising and will be changed when synth is initialised to current panel controls & EEPROM settings
 byte midiChannel = 1;  //(EEPROM)
 int resolutionFrig = 1;
+static const byte OUT_CH = 1;   // choose your synth receive channel (1–16)
 
 String patchNameU = INITPATCHNAME;
 String patchNameL = INITPATCHNAME;
@@ -38,67 +39,6 @@ int speed = 1;
 int value = 0;
 float lastSpeed[NUM_ENCODERS + 1] = { 0 }; // Or whatever your encoder count is
 
-//adding button toggles
-static int storedOsc1PWUpper = -1;
-static int storedOsc1PWLower = -1;
-static bool toggleOsc1PWUpper = false;
-static bool toggleOsc1PWLower = false;
-
-static int storedOsc2PWUpper = -1;
-static int storedOsc2PWLower = -1;
-static bool toggleOsc2PWUpper = false;
-static bool toggleOsc2PWLower = false;
-
-static int storedEffectsMixU = -1;
-static int storedEffectsMixL = -1;
-static bool toggleEffectsMixU = false;
-static bool toggleEffectsMixL = false;
-
-static int storedNoiseLevelU = -1;
-static int storedNoiseLevelL = -1;
-static bool toggleNoiseLevelU = false;
-static bool toggleNoiseLevelL = false;
-
-static int storedFM_DepthU = -1;
-static int storedFM_DepthL = -1;
-static bool toggleFM_DepthU = false;
-static bool toggleFM_DepthL = false;
-
-static int storedOsc2_detuneU = -1;
-static int storedOsc2_detuneL = -1;
-static bool toggleOsc2_detuneU = false;
-static bool toggleOsc2_detuneL = false;
-
-static int storedOsc1_SawU = -1;
-static int storedOsc1_SawL = -1;
-static bool toggleOsc1_SawU = false;
-static bool toggleOsc1_SawL = false;
-
-static int storedOsc2_SawU = -1;
-static int storedOsc2_SawL = -1;
-static bool toggleOsc2_SawU = false;
-static bool toggleOsc2_SawL = false;
-
-static int storedOsc1_PulseU = -1;
-static int storedOsc1_PulseL = -1;
-static bool toggleOsc1_PulseU = false;
-static bool toggleOsc1_PulseL = false;
-
-static int storedOsc2_PulseU = -1;
-static int storedOsc2_PulseL = -1;
-static bool toggleOsc2_PulseU = false;
-static bool toggleOsc2_PulseL = false;
-
-static int storedOsc1_SubU = -1;
-static int storedOsc1_SubL = -1;
-static bool toggleOsc1_SubU = false;
-static bool toggleOsc1_SubL = false;
-
-static int storedOsc2_TriU = -1;
-static int storedOsc2_TriL = -1;
-static bool toggleOsc2_TriU = false;
-static bool toggleOsc2_TriL = false;
-
 int upperData[77];
 int lowerData[77];
 int panelData[77];
@@ -116,13 +56,13 @@ int panelData[77];
 #define P_lfoDelay 10
 #define P_lfoWaveform 11
 #define P_vcoLfoMod 12
-#define P_vcfEnvMod 13
+#define P_vcoEnvMod 13
 #define P_PWMMod 14
 #define P_crossMod 15
 #define P_vco1Range 16
 #define P_vco1Waveform 17
 #define P_vco2Range 18
-#define P_vco2Fine19
+#define P_vco2Fine 19
 #define P_vco2Waveform 20
 #define P_vcoBalance 21
 #define P_HPF 22
@@ -162,8 +102,10 @@ int panelData[77];
 #define P_arpModeSW 56
 #define P_AfterTouchDest 57
 #define P_ATDepth 58
+#define P_chorus 59
 
 int playMode = 0;
+int glideSW = 0;
 int lowerSplitVoicePointer = 0;
 int upperSplitVoicePointer = 0;
 int performanceIndex = 0;
@@ -172,22 +114,6 @@ static bool recallHeldToggleLatch = false;
 bool startedRenaming = false;
 bool isAutotuning = false;
 int scaled = 0;
-
-// footswitch
-bool upperfootPedal = false;
-bool lowerfootPedal = false;
-int upperfastpot3 = 125;
-int upperslowpot3 = 3;
-bool upperfast = false;
-bool upperslow = true;
-int lowerfastpot3 = 125;
-int lowerslowpot3 = 3;
-bool lowerfast = false;
-bool lowerslow = true;
-int upperLastSentPot3 = -1;
-int lowerLastSentPot3 = -1;
-unsigned long lastSpeedStepTime = 0;
-const int SPEED_STEP_INTERVAL_MS = 20; // for ~2.5s traversal
 
 //Delayed LFO
 int numberOfNotes = 0;
@@ -207,7 +133,7 @@ boolean encCW = true;  //This is to set the encoder to increment when turned CW 
 boolean announce = true;
 // polykit parameters in order of mux
 
-String StratusLFOWaveform = "                ";
+String StratuslfoWaveform = "                ";
 
 int oldfilterCutoff = 0;
 int oldfilterCutoffU = 0;
@@ -217,9 +143,24 @@ boolean upperSW = false;
 int oldupperSW = 0;
 boolean lowerSW = true;
 int oldlowerSW = 0;
-int chordHoldSW = 0;
-int chordHoldU = 0;
-int chordHoldL = 0;
+
+float resonancestr = 0;
+float filterCutoffstr = 0;
+float glideTimestr = 0;
+float env1Attackstr = 0;
+float env1Decaystr = 0;
+float env1Sustainstr = 0;
+float env1Releasestr = 0;
+float env2Releasestr = 0;
+float env2Sustainstr = 0;
+float env2Decaystr = 0;
+float env2Attackstr = 0;
+float LFORatestr = 0;
+float lfoDelaystr = 0;
+int lfoWaveformstr = 0;
+int lfoWaveformDisplay = 0;
+float vcoLfoModstr = 0;
+float vcoEnvModstr = 0;
 
 float afterTouch = 0;
 float afterTouchU = 0;
@@ -227,54 +168,57 @@ float afterTouchL = 0;
 int AfterTouchDest = 0;
 int AfterTouchDestU = 0;
 int AfterTouchDestL = 0;
-float pwLFOstr = 0;
-float fmDepthstr = 0;
-float ATDepthstr = 0;
-float osc2PWstr = 0;
-float osc2PWMstr = 0;
-float osc1PWstr = 0;
-float osc1PWMstr = 0;
-float glideTimestr = 0;
-float osc2Detunestr = 0;
-int osc2Intervalstr = 0;
-float noiseLevelstr = 0;
-float osc2SawLevelstr = 0;
-float osc1SawLevelstr = 0;
-float osc2PulseLevelstr = 0;
-float osc1PulseLevelstr = 0;
-float osc2TriangleLevelstr = 0;
-float osc1SubLevelstr = 0;
-float filterCutoffstr = 0;
-float filterLFOstr = 0;
-float filterResstr = 0;
-float filterEGlevelstr = 0;
-float LFORatestr = 0;
-float LFODelaystr = 0;
-int LFOWaveformstr = 0;
-float filterAttackstr = 0;
-float filterDecaystr = 0;
-float filterSustainstr = 0;
-float filterReleasestr = 0;
-float amDepthstr = 0;
-float volumeControlstr = 0;
-float ampReleasestr = 0;
-float ampSustainstr = 0;
-float ampDecaystr = 0;
-float ampAttackstr = 0;
-float effectPot1str = 0;
-float effectPot2str = 0;
-float effectPot3str = 0;
-float effectsMixstr = 0;
-float pmDCO2str = 0;
-float pmFilterEnvstr = 0;
-float keytrackstr = 0;
-float modWheelDepthstr = 0;
-int modWheelLevelstr = 0;
-int PitchBendLevelstr = 0;  // for display
+
+
+// float pwLFOstr = 0;
+// float fmDepthstr = 0;
+// float ATDepthstr = 0;
+// float osc2PWstr = 0;
+// float osc2PWMstr = 0;
+// float osc1PWstr = 0;
+// float osc1PWMstr = 0;
+
+// float osc2Detunestr = 0;
+// int osc2Intervalstr = 0;
+// float noiseLevelstr = 0;
+// float osc2SawLevelstr = 0;
+// float osc1SawLevelstr = 0;
+// float osc2PulseLevelstr = 0;
+// float osc1PulseLevelstr = 0;
+// float osc2TriangleLevelstr = 0;
+// float osc1SubLevelstr = 0;
+
+// float filterLFOstr = 0;
+
+// float filterEGlevelstr = 0;
+
+// float env1Attackstr = 0;
+// float env1Decaystr = 0;
+// float env1Sustainstr = 0;
+// float env1Releasestr = 0;
+// float amDepthstr = 0;
+// float volumeControlstr = 0;
+// float env2Releasestr = 0;
+// float env2Sustainstr = 0;
+// float env2Decaystr = 0;
+// float env2Attackstr = 0;
+// float effectPot1str = 0;
+// float effectPot2str = 0;
+// float effectPot3str = 0;
+// float effectsMixstr = 0;
+// float pmDCO2str = 0;
+// float pmFilterEnvstr = 0;
+// float keytrackstr = 0;
+// float modWheelDepthstr = 0;
+// int modWheelLevelstr = 0;
+// int PitchBendLevelstr = 0;  // for display
 
 boolean wholemode = true;
+boolean whole_button = true;
 boolean dualmode = false;
+boolean dual_button = false;
 boolean splitmode = false;
+boolean split_button = false;
 
 int LFOWaveCV = 0;
 int LFOWaveCVupper = 0;

@@ -86,41 +86,40 @@ ADC *adc = new ADC();
 #define VCO2_RANGE_BUTTON 15
 #define VCO_PWM_SRC_BUTTON 16
 #define VCO_MOD_DEST_BUTTON 17
-#define VCO_BEND_BUTTON 18
-#define SOLO_BUTTON 19
-#define UNISON_BUTTON 20
-#define POLY1_BUTTON 21
-#define POLY2_BUTTON 22
-#define LOWER_BUTTON 23
-#define UPPER_BUTTON 24
-#define DUAL_BUTTON 25
-#define SPLIT_BUTTON 26
-#define WHOLE_BUTTON 27
-#define PANEL_LOWER_BUTTON 28
-#define PANEL_UPPER_BUTTON 29
-#define ENV1_INVERT_BUTTON 30
-#define VCA_MOD_DEPTH_BUTTON 31
-#define VCF_ENV_SRC_BUTTON 22
-#define VCF_SLOPE_BUTTON 33
-#define MANUAL_BUTTON 34
-#define ENV2_KEYFOLLOW_BUTTON 35
-#define CHORUS_BUTTON 36
-#define PATCH1_BUTTON 37
-#define PATCH2_BUTTON 38
-#define PATCH3_BUTTON 39
-#define PATCH4_BUTTON 40
-#define PATCH5_BUTTON 41
-#define PATCH6_BUTTON 42
-#define PATCH7_BUTTON 41
-#define PATCH8_BUTTON 42
-#define PRESET1_BUTTON 43
-#define PRESET2_BUTTON 44
-#define PRESET3_BUTTON 45
-#define PRESET4_BUTTON 46
-#define PRESET5_BUTTON 47
-#define PRESET6_BUTTON 48
-#define PRESET7_BUTTON 49
-#define PRESET8_BUTTON 50
+#define SOLO_BUTTON 18
+#define UNISON_BUTTON 19
+#define POLY1_BUTTON 20
+#define POLY2_BUTTON 21
+#define LOWER_BUTTON 22
+#define UPPER_BUTTON 23
+#define DUAL_BUTTON 24
+#define SPLIT_BUTTON 25
+#define WHOLE_BUTTON 26
+#define PANEL_LOWER_BUTTON 27
+#define PANEL_UPPER_BUTTON 28
+#define ENV1_INVERT_BUTTON 29
+#define VCA_MOD_DEPTH_BUTTON 30
+#define VCF_ENV_SRC_BUTTON 31
+#define VCF_SLOPE_BUTTON 32
+#define MANUAL_BUTTON 33
+#define ENV2_KEYFOLLOW_BUTTON 34
+#define CHORUS_BUTTON 35
+#define PATCH1_BUTTON 36
+#define PATCH2_BUTTON 37
+#define PATCH3_BUTTON 38
+#define PATCH4_BUTTON 39
+#define PATCH5_BUTTON 40
+#define PATCH6_BUTTON 41
+#define PATCH7_BUTTON 42
+#define PATCH8_BUTTON 43
+#define PRESET1_BUTTON 44
+#define PRESET2_BUTTON 45
+#define PRESET3_BUTTON 46
+#define PRESET4_BUTTON 47
+#define PRESET5_BUTTON 48
+#define PRESET6_BUTTON 49
+#define PRESET7_BUTTON 50
+#define PRESET8_BUTTON 51
 
 // Pins for MCP23017
 #define GPA0 0
@@ -167,49 +166,67 @@ constexpr int numEncoders = (int)(sizeof(rotaryEncoders) / sizeof(*rotaryEncoder
 // an array of vectors to hold pointers to the encoders on each MCP
 std::vector<RotaryEncOverMCP *> encByMCP[NUM_MCP];
 
-Button osc1_PW_Button = Button(&mcp1, 6, OSC1_PW_BUTTON, &mainButtonChanged);
-Button osc2_PW_Button = Button(&mcp1, 14, OSC2_PW_BUTTON, &mainButtonChanged);
-Button fm_depth_Button = Button(&mcp2, 6, FM_DEPTH_BUTTON, &mainButtonChanged);
-Button osc2_detune_Button = Button(&mcp2, 14, OSC2_DETUNE_BUTTON, &mainButtonChanged);
-Button osc1_saw_Button = Button(&mcp3, 6, OSC1_SAW_BUTTON, &mainButtonChanged);
-Button osc1_pulse_Button = Button(&mcp3, 14, OSC1_PULSE_BUTTON, &mainButtonChanged);
-Button osc1_sub_Button = Button(&mcp4, 6, OSC1_SUB_BUTTON, &mainButtonChanged);
-Button osc2_saw_Button = Button(&mcp4, 14, OSC2_SAW_BUTTON, &mainButtonChanged);
-Button osc2_pulse_Button = Button(&mcp5, 6, OSC2_PULSE_BUTTON, &mainButtonChanged);
-Button osc2_tri_Button = Button(&mcp5, 14, OSC2_TRI_BUTTON, &mainButtonChanged);
-Button effects_mix_Button = Button(&mcp7, 6, EFFECTS_MIX_BUTTON, &mainButtonChanged);
-Button noise_Button = Button(&mcp7, 14, NOISE_BUTTON, &mainButtonChanged);
+Button arp_range2_Button = Button(&mcp1, 0, ARP_RANGE2_BUTTON, &mainButtonChanged);
+Button arp_range1_Button = Button(&mcp1, 1, ARP_RANGE1_BUTTON, &mainButtonChanged);
+Button portamento_Button = Button(&mcp1, 2, PORTAMENTO_BUTTON, &mainButtonChanged);
+Button vcf_mod_Button = Button(&mcp1, 3, VCF_MOD_BUTTON, &mainButtonChanged);
+Button vco_mod_Button = Button(&mcp1, 4, VCO_MOD_BUTTON, &mainButtonChanged);
+Button vcf_bend_Button = Button(&mcp1, 5, VCF_BEND_BUTTON, &mainButtonChanged);
+Button vco_bend_Button = Button(&mcp1, 6, VCO_BEND_BUTTON, &mainButtonChanged);
+
+Button arp_mode_up_down_Button = Button(&mcp2, 0, ARP_MODE_UP_DOWN_BUTTON, &mainButtonChanged);
+Button arp_mode_random_Button = Button(&mcp2, 2, ARP_MODE_RANDOM_BUTTON, &mainButtonChanged);
+Button arp_clk_Button = Button(&mcp2, 6, ARP_CLK_BUTTON, &mainButtonChanged);
+Button arp_range3_Button = Button(&mcp2, 8, ARP_RANGE3_BUTTON, &mainButtonChanged);
+Button arp_range4_Button = Button(&mcp2, 10, ARP_RANGE4_BUTTON, &mainButtonChanged);
+Button arp_mode_up_Button = Button(&mcp2, 12, ARP_MODE_UP_BUTTON, &mainButtonChanged);
+Button arp_mode_down_Button = Button(&mcp2, 14, ARP_MODE_DOWN_BUTTON, &mainButtonChanged);
+
+Button vco2_sync_Button = Button(&mcp3, 0, VCO2_SYNC_BUTTON, &mainButtonChanged);
+Button vco2_range_Button = Button(&mcp3, 1, VCO2_RANGE_BUTTON, &mainButtonChanged);
+Button vco_pwm_src_Button = Button(&mcp3, 2, VCO_PWM_SRC_BUTTON, &mainButtonChanged);
+Button vco_mod_dest_Button = Button(&mcp3, 3, VCO_MOD_DEST_BUTTON, &mainButtonChanged);
+Button solo_Button = Button(&mcp3, 8, SOLO_BUTTON, &mainButtonChanged);
+Button unison_Button = Button(&mcp3, 9, UNISON_BUTTON, &mainButtonChanged);
+Button poly1_Button = Button(&mcp3, 10, POLY1_BUTTON, &mainButtonChanged);
+Button poly2_Button = Button(&mcp3, 11, POLY2_BUTTON, &mainButtonChanged);
+
+Button lower_Button = Button(&mcp4, 8, LOWER_BUTTON, &mainButtonChanged);
+Button upper_Button = Button(&mcp4, 9, UPPER_BUTTON, &mainButtonChanged);
+Button dual_Button = Button(&mcp4, 10, DUAL_BUTTON, &mainButtonChanged);
+Button split_Button = Button(&mcp4, 11, SPLIT_BUTTON, &mainButtonChanged);
+Button whole_Button = Button(&mcp4, 12, WHOLE_BUTTON, &mainButtonChanged);
+Button panel_lower_Button = Button(&mcp4, 13, PANEL_LOWER_BUTTON, &mainButtonChanged);
+Button panel_upper_Button = Button(&mcp4, 14, PANEL_UPPER_BUTTON, &mainButtonChanged);
+
+Button env1_invert_Button = Button(&mcp7, 0, ENV1_INVERT_BUTTON, &mainButtonChanged);
+Button vca_mode_depth_Button = Button(&mcp7, 1, VCA_MOD_DEPTH_BUTTON, &mainButtonChanged);
+Button vcf_env_src_Button = Button(&mcp7, 2, VCF_ENV_SRC_BUTTON, &mainButtonChanged);
+Button vcf_slope_Button = Button(&mcp7, 3, VCF_SLOPE_BUTTON, &mainButtonChanged);
+Button manual_Button = Button(&mcp7, 12, MANUAL_BUTTON, &mainButtonChanged);
+
+Button env2_keyfollow_Button = Button(&mcp8, 0, ENV2_KEYFOLLOW_BUTTON, &mainButtonChanged);
+Button chorus_Button = Button(&mcp8, 8, CHORUS_BUTTON, &mainButtonChanged);
 
 Button *mainButtons[] = {
-  &osc1_PW_Button,
-  &osc2_PW_Button,
-  &fm_depth_Button,
-  &osc2_detune_Button,
-  &osc1_saw_Button,
-  &osc1_pulse_Button,
-  &osc1_sub_Button,
-  &osc2_saw_Button,
-  &osc2_pulse_Button,
-  &osc2_tri_Button,
-  &effects_mix_Button,
-  &noise_Button,
+  &arp_range2_Button, &arp_range1_Button, &portamento_Button, &vcf_mod_Button, &vco_mod_Button, &vcf_bend_Button, &vco_bend_Button,
+  &arp_mode_up_down_Button, &arp_mode_random_Button, &arp_clk_Button, &arp_range3_Button, &arp_range4_Button, &arp_mode_up_Button, &arp_mode_down_Button,
+  &vco2_sync_Button, &vco2_range_Button, &vco_pwm_src_Button, &vco_mod_dest_Button, &solo_Button, &unison_Button, &poly1_Button, &poly2_Button,
+  &lower_Button, &upper_Button, &dual_Button, &split_Button, &whole_Button, &panel_lower_Button, &panel_upper_Button,
+  &env1_invert_Button, &vca_mode_depth_Button, &vcf_env_src_Button, &vcf_slope_Button, &manual_Button,
+  &env2_keyfollow_Button, &chorus_Button,
 };
 
 Button *allButtons[] = {
-  &osc1_PW_Button,
-  &osc2_PW_Button,
-  &fm_depth_Button,
-  &osc2_detune_Button,
-  &osc1_saw_Button,
-  &osc1_pulse_Button,
-  &osc1_sub_Button,
-  &osc2_saw_Button,
-  &osc2_pulse_Button,
-  &osc2_tri_Button,
-  &effects_mix_Button,
-  &noise_Button,
+  &arp_range2_Button, &arp_range1_Button, &portamento_Button, &vcf_mod_Button, &vco_mod_Button, &vcf_bend_Button, &vco_bend_Button,
+  &arp_mode_up_down_Button, &arp_mode_random_Button, &arp_clk_Button, &arp_range3_Button, &arp_range4_Button, &arp_mode_up_Button, &arp_mode_down_Button,
+  &vco2_sync_Button, &vco2_range_Button, &vco_pwm_src_Button, &vco_mod_dest_Button, &solo_Button, &unison_Button, &poly1_Button, &poly2_Button,
+  &lower_Button, &upper_Button, &dual_Button, &split_Button, &whole_Button, &panel_lower_Button, &panel_upper_Button,
+  &env1_invert_Button, &vca_mode_depth_Button, &vcf_env_src_Button, &vcf_slope_Button, &manual_Button,
+  &env2_keyfollow_Button, &chorus_Button,
 };
 
+// Buttons
 // GP1
 #define ARP_RANGE2_SW 0
 #define ARP_RANGE1_SW 1
@@ -264,6 +281,29 @@ Button *allButtons[] = {
 #define ENV2_KEYFOLLOW_SW 0
 #define CHORUS_SW 8
 
+// LEDS
+
+//GP1
+#define ARP_RANGE2_LED 7
+#define GLIDE_LED_GRN 8
+#define GLIDE_LED_RED 9
+#define VCF_LFO_LED 10
+#define VCO_LFO_LED 11
+#define VCF_BEND_LED 12
+#define VCO_BEND_LED_GRN 13
+#define VCO_BEND_LED_RED 14
+#define ARP_RANGE1_LED 15
+
+//GP4
+#define PM_LOWER_LED 0
+#define LOWER_LED 1
+#define UPPER_LED 2
+#define DUAL_LED 3
+#define SPLIT_LED 4
+#define WHOLE_LED 5
+#define VCO_PWM_SRC_LED_GRN 6
+#define VCO_PWM_SRC_LED_RED 7
+#define PM_UPPER_LED 15
 
 //Note DAC
 #define MULT1V 107
@@ -275,118 +315,6 @@ Button *allButtons[] = {
 #define CLAMP2V 26500  // DAC value that corresponds to 2V
 
 #define DAC_CS1 10
-
-// 74HC165 Switches
-
-#define POLY1_SW 0
-#define POLY2_SW 1
-#define UNISON_SW 2
-#define MONO_SW 3
-#define LOWER_SW 4
-#define UPPER_SW 5
-#define CHORD_HOLD_SW 6
-#define KEYBOARD_SW 7
-
-#define GLIDE_SW 8
-#define PRIORITY_SW 9
-#define DCO1_OCT_SW 10
-#define DCO2_OCT_SW 11
-#define KEYTRACK_SW 12
-#define FILTER_TYPE_SW 13
-#define FILTER_POLE_SW 14
-#define EG_INVERT_SW 15
-
-#define FILTER_ENV_VELOCITY_SW 16
-#define FILTER_ENV_LIN_LOG_SW 17
-#define FILTER_ENV_LOOP_SW 18
-#define AMP_ENV_VELOCITY_SW 19
-#define AMP_ENV_LIN_LOG_SW 20
-#define AMP_ENV_LOOP_SW 21
-#define LFO_WAVEFORM_SW 22
-#define SYNC_SW 23
-
-#define EFFECT_NUMBER_SW 24
-#define PM_DCO1_DEST_SW 25
-#define PM_FILT_ENV_DEST_SW 26
-#define AMP_GATED_SW 27
-#define EFFECT_BANK_SW 28
-#define LFO_ALT_SW 29
-#define LFO_MULTI_MONO_SW 30
-#define LFO_MULT_SW 31
-
-// New 595 outputs X8
-
-#define SYNC_UPPER 0
-#define SPARE1 1
-#define SPARE2 2
-#define SPARE3 3
-#define FILTER_EG_INV_UPPER 4
-#define FILTER_VELOCITY_UPPER 5
-#define AMP_VELOCITY_UPPER 6
-#define LFO_ALT_UPPER 7
-
-#define POLYMOD_DEST_DCO1_UPPER 8
-#define POLYMOD_DEST_FILTER_UPPER 9
-#define EFFECT_BANK_1_UPPER 10
-#define EFFECT_BANK_2_UPPER 11
-#define EFFECT_BANK_3_UPPER 12
-#define SPARE13 13
-#define FILTER_LIN_LOG_UPPER 14
-#define AMP_LIN_LOG_UPPER 15
-
-#define EFFECT_2_UPPER 16
-#define EFFECT_1_UPPER 17
-#define EFFECT_0_UPPER 18
-#define EFFECT_INTERNAL_UPPER 19
-#define FILTER_POLE_UPPER 20
-#define FILTERA_UPPER 21
-#define FILTERB_UPPER 22
-#define FILTERC_UPPER 23
-
-#define SYNC_LOWER 24
-#define SPARE25 25
-#define SPARE26 26
-#define SPARE27 27
-#define FILTER_EG_INV_LOWER 28
-#define FILTER_VELOCITY_LOWER 29
-#define AMP_VELOCITY_LOWER 30
-#define LFO_ALT_LOWER 31
-
-#define POLYMOD_DEST_DCO1_LOWER 32
-#define POLYMOD_DEST_FILTER_LOWER 33
-#define EFFECT_BANK_1_LOWER 34
-#define EFFECT_BANK_2_LOWER 35
-#define EFFECT_BANK_3_LOWER 36
-#define UPPER_RELAY_3 37
-#define FILTER_LIN_LOG_LOWER 38
-#define AMP_LIN_LOG_LOWER 39
-
-#define EFFECT_2_LOWER 40
-#define EFFECT_1_LOWER 41
-#define EFFECT_0_LOWER 42
-#define EFFECT_INTERNAL_LOWER 43
-#define FILTER_POLE_LOWER 44
-#define FILTERA_LOWER 45
-#define FILTERB_LOWER 46
-#define FILTERC_LOWER 47
-
-#define FILTER_MODE_BIT0_UPPER 48
-#define FILTER_MODE_BIT1_UPPER 49
-#define FILTER_MODE_BIT0_LOWER 50
-#define FILTER_MODE_BIT1_LOWER 51
-#define AMP_MODE_BIT0_UPPER 52
-#define AMP_MODE_BIT1_UPPER 53
-#define AMP_MODE_BIT0_LOWER 54
-#define AMP_MODE_BIT1_LOWER 55
-
-#define UPPER_RELAY_1 56
-#define UPPER_RELAY_2 57  // LEDs for LFO (lower Default)
-#define LFO_MULTI_BIT0_UPPER 58
-#define LFO_MULTI_BIT1_UPPER 59
-#define LFO_MULTI_BIT2_UPPER 60
-#define LFO_MULTI_BIT0_LOWER 61
-#define LFO_MULTI_BIT1_LOWER 62
-#define LFO_MULTI_BIT2_LOWER 63
 
 // System Switches etc
 
@@ -462,13 +390,6 @@ void setupHardware() {
 
   pinMode(DAC_CS1, OUTPUT);
   digitalWrite(DAC_CS1, HIGH);
-
-  pinMode(TUNE_LED, OUTPUT);
-  digitalWrite(TUNE_LED, LOW);
-
-  pinMode(TUNE_BUTTON, INPUT_PULLUP);
-
-  pinMode(AUTOTUNE_INPUT, INPUT);
 
   //Switches
 
