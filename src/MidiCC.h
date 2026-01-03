@@ -4,7 +4,13 @@
 
 #define   CClfoRate       3
 #define   CCglideTime     5
+
+#define   CCvolume        7
+
 #define   CClfoDelay      9
+
+#define   CCbalance      10
+
 #define   CClfoWaveform   12
 
 #define   CCvcoLfoMod     13
@@ -58,8 +64,17 @@
 #define   CCdelayFeedback 83
 #define   CCchorus        93
 
+// Not accessible over MIDI to the JP-08
+
+#define   CCvcoBendSW     88
+#define   CCvcfBendRange  89
+#define   CCvcfBendSW     90
+#define   CCvcoModSW      94
+#define   CCvcfModSW      95
+#define   CCvco2RangeSW   96
 #define   CCupperSW       97
 #define   CClowerSW       98
+#define   CCarpRate       99
 #define   CCplayMode      100
 #define   CCdual_button   101
 #define   CCwhole_button  102

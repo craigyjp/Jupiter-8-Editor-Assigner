@@ -18,8 +18,8 @@ ADC *adc = new ADC();
 #define MUX1_VCO_MOD 2
 #define MUX1_VCF_MOD 3
 #define MUX1_GLIDE_TIME 4
-#define MUX1_BALANCE 5
-#define MUX1_VOLUME 6
+#define MUX1_VOLUME 5
+#define MUX1_BALANCE 6
 #define MUX1_ARP_RATE 7
 #define MUX1_LFO_RATE 8
 #define MUX1_LFO_DELAY 9
@@ -33,8 +33,8 @@ ADC *adc = new ADC();
 //Mux 2 Connections
 #define MUX2_VCO1_WAVE 0
 #define MUX2_VCO2_RANGE 1
-#define MUX2_VCO2_FINE 2
-#define MUX2_VCO2_WAVE 3
+#define MUX2_VCO2_WAVE 2
+#define MUX2_VCO2_FINE 3
 #define MUX2_VCO_BALANCE 4
 #define MUX2_HPF 5
 #define MUX2_CUTOFF 6
@@ -294,6 +294,16 @@ Button *allButtons[] = {
 #define VCO_BEND_LED_RED 14
 #define ARP_RANGE1_LED 15
 
+//GP3
+#define VCO2_SYNC_LED 4
+#define VCO2_RANGE_LED 5
+#define VCO_MOD_DEST_LED_RED 6
+#define VCO_MOD_DEST_LED_GRN 7
+#define SOLO_LED 12
+#define UNISON_LED 13
+#define POLY1_LED 14
+#define POLY2_LED 15
+
 //GP4
 #define PM_LOWER_LED 0
 #define LOWER_LED 1
@@ -304,6 +314,23 @@ Button *allButtons[] = {
 #define VCO_PWM_SRC_LED_GRN 6
 #define VCO_PWM_SRC_LED_RED 7
 #define PM_UPPER_LED 15
+
+//GP7
+#define ENV1_INVERT_LED_GRN 4
+#define ENV1_INVERT_LED_RED 5
+#define VCA_MOD_LED_GRN 6
+#define VCA_MOD_LED_RED 7
+#define VCF_ENV_SRC_LED_GRN 8
+#define VCF_ENV_SRC_LED_RED 9
+#define VCF_SLOPE_LED_GRN 10
+#define VCF_SLOPE_LED_RED 11
+#define MANUAL_LED 13
+
+//GP8
+#define ENV_KEYFOLLOW_LED_RED 1
+#define ENV_KEYFOLLOW_LED_GRN 2
+#define CHORUS_LED_GRN 9
+#define CHORUS_LED_RED 10
 
 //Note DAC
 #define MULT1V 107
@@ -390,6 +417,11 @@ void setupHardware() {
 
   pinMode(DAC_CS1, OUTPUT);
   digitalWrite(DAC_CS1, HIGH);
+
+  //Mux ADC
+  pinMode(MUX1_S, INPUT_DISABLE);
+  pinMode(MUX2_S, INPUT_DISABLE);
+  pinMode(MUX3_S, INPUT_DISABLE);
 
   //Switches
 

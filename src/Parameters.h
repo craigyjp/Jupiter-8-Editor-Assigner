@@ -103,9 +103,11 @@ int panelData[77];
 #define P_AfterTouchDest 57
 #define P_ATDepth 58
 #define P_chorus 59
+#define P_vcfModSW 60
 
 int playMode = 0;
 int glideSW = 0;
+int vcoBendSW = 0;
 int lowerSplitVoicePointer = 0;
 int upperSplitVoicePointer = 0;
 int performanceIndex = 0;
@@ -144,7 +146,7 @@ int oldupperSW = 0;
 boolean lowerSW = true;
 int oldlowerSW = 0;
 
-float resonancestr = 0;
+int resonancestr = 0;
 float filterCutoffstr = 0;
 float glideTimestr = 0;
 float env1Attackstr = 0;
@@ -156,11 +158,36 @@ float env2Sustainstr = 0;
 float env2Decaystr = 0;
 float env2Attackstr = 0;
 float LFORatestr = 0;
-float lfoDelaystr = 0;
+int lfoDelaystr = 0;
 int lfoWaveformstr = 0;
 int lfoWaveformDisplay = 0;
-float vcoLfoModstr = 0;
-float vcoEnvModstr = 0;
+int vcoLfoModstr = 0;
+int vcoEnvModstr = 0;
+int PWMModstr = 0;
+int crossModstr = 0;
+int vco1Rangestr = 0;
+int vco1RangeDisplay = 0;
+int vco1Waveformstr = 0;
+int vco1WaveformDisplay = 0;
+int vco2Rangestr = 0;
+int vco2RangeDisplay = 0;
+int vco2Waveformstr = 0;
+int vco2WaveformDisplay = 0;
+float vco2Finestr = 0;
+int16_t fineDisp = 0;
+float vcoBalancestr = 0;
+int HPFstr = 0;
+int vcfEnvDepthstr = 0;
+int vcfLfoDepthstr = 0;
+int vcfKeyFollowstr = 0;
+int vcaLevelstr = 0;
+float arpRatestr = 0;
+int volumestr = 0;
+float balancestr = 0;
+int delayLevelstr = 0;
+int delayTimestr = 0;
+int delayFeedbackstr = 0;
+int bendRangestr = 0;
 
 float afterTouch = 0;
 float afterTouchU = 0;
@@ -169,46 +196,6 @@ int AfterTouchDest = 0;
 int AfterTouchDestU = 0;
 int AfterTouchDestL = 0;
 
-
-// float pwLFOstr = 0;
-// float fmDepthstr = 0;
-// float ATDepthstr = 0;
-// float osc2PWstr = 0;
-// float osc2PWMstr = 0;
-// float osc1PWstr = 0;
-// float osc1PWMstr = 0;
-
-// float osc2Detunestr = 0;
-// int osc2Intervalstr = 0;
-// float noiseLevelstr = 0;
-// float osc2SawLevelstr = 0;
-// float osc1SawLevelstr = 0;
-// float osc2PulseLevelstr = 0;
-// float osc1PulseLevelstr = 0;
-// float osc2TriangleLevelstr = 0;
-// float osc1SubLevelstr = 0;
-
-// float filterLFOstr = 0;
-
-// float filterEGlevelstr = 0;
-
-// float env1Attackstr = 0;
-// float env1Decaystr = 0;
-// float env1Sustainstr = 0;
-// float env1Releasestr = 0;
-// float amDepthstr = 0;
-// float volumeControlstr = 0;
-// float env2Releasestr = 0;
-// float env2Sustainstr = 0;
-// float env2Decaystr = 0;
-// float env2Attackstr = 0;
-// float effectPot1str = 0;
-// float effectPot2str = 0;
-// float effectPot3str = 0;
-// float effectsMixstr = 0;
-// float pmDCO2str = 0;
-// float pmFilterEnvstr = 0;
-// float keytrackstr = 0;
 // float modWheelDepthstr = 0;
 // int modWheelLevelstr = 0;
 // int PitchBendLevelstr = 0;  // for display
