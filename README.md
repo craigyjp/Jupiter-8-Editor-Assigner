@@ -2,6 +2,8 @@
 
 This project was put togther to control a pair of Roland boutique JP-08 synth modules.
 
+![Synth](photos/synth.jpg)
+
 These modules are 4 note polyphonic and can be used as half of a sound card for a Jupiter 8.
 
 The pair togther create an 8 note polyphonic synth comparable to a Jupiter 8.
