@@ -16,5 +16,14 @@ I'm going to include an arpeggiator section similar to the Jupiter 8 and patch m
 
 The JP-08 modules have portamento, delay and chorus effects that are hidden from the front panel and only available via MIDI.
 
+# Things to do
+
+* Add the mode buttons for solo, unison, poly1 and poly2
+* Implement the hold sections
+* Add the patch and bank buttons
+* Add the arpeggiator
+* Decide how to handle the filter bend control.
+
+
 
 
