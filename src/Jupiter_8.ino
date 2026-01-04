@@ -510,12 +510,6 @@ void mainButtonChanged(Button *btn, bool released) {
       }
       break;
 
-    case VCO2_RANGE_BUTTON:
-      if (!released) {
-        myControlChange(midiChannel, CCvco2RangeSW, 1);
-      }
-      break;
-
     case VCO_MOD_DEST_BUTTON:
       if (!released) {
         myControlChange(midiChannel, CCvcoModSelSW, 1);
@@ -1405,8 +1399,8 @@ void DinHandlePitchBend(byte channel, int pitch) {
 }
 
 void allNotesOff() {
-  midiCCOutUpper(WSallNotesOff, 127);
-  midiCCOutLower(WSallNotesOff, 127);
+  midiCCOutUpper(CCallnotesoff, 127);
+  midiCCOutLower(CCallnotesoff, 127);
 }
 
 void updatePWMMod(boolean announce) {
@@ -1452,7 +1446,7 @@ void updateglideTime(boolean announce) {
     midiCCOut(CCglideTime, lowerData[P_glideTime]);
     midiCCOutLower(CCglideTime, lowerData[P_glideTime]);
     if (wholemode) {
-      midiCCOutUpper(WSglideTime, upperData[P_glideTime]);
+      midiCCOutUpper(CCglideTime, upperData[P_glideTime]);
     }
   }
 }
@@ -1666,6 +1660,44 @@ void updatearpRate(boolean announce) {
   }
 }
 
+void updatevcoLfoModDepth(boolean announce) {
+
+  if (announce) {
+    if (vcoLfoModDepthstr == 0) {
+      showCurrentParameterPage("VCO MW Mod Dep", "Off");
+    } else {
+      showCurrentParameterPage("VCO MW Mod Dep ", String(vcoLfoModDepthstr));
+    }
+  }
+  if (upperSW) {
+    midiCCOut(CCvcoLfoModDepth, upperData[P_vcoLfoModDepth]);
+  } else {
+    midiCCOut(CCvcoLfoModDepth, lowerData[P_vcoLfoModDepth]);
+    if (wholemode) {
+      upperData[P_vcoLfoModDepth] = lowerData[P_vcoLfoModDepth];
+    }
+  }
+}
+
+void updatevcfLfoModDepth(boolean announce) {
+
+  if (announce) {
+    if (vcfLfoModDepthstr == 0) {
+      showCurrentParameterPage("VCF MW Mod Dep", "Off");
+    } else {
+      showCurrentParameterPage("VCF MW Mod Dep ", String(vcfLfoModDepthstr));
+    }
+  }
+  if (upperSW) {
+    midiCCOut(CCvcfLfoModDepth, upperData[P_vcfLfoModDepth]);
+  } else {
+    midiCCOut(CCvcfLfoModDepth, lowerData[P_vcfLfoModDepth]);
+    if (wholemode) {
+      upperData[P_vcfLfoModDepth] = lowerData[P_vcfLfoModDepth];
+    }
+  }
+}
+
 void updatelfoDelay(boolean announce) {
   if (announce) {
     showCurrentParameterPage("LFO Delay", String(lfoDelaystr));
@@ -1841,33 +1873,33 @@ void updatevco2Range(boolean announce) {
   if (announce) {
     if (vco2WaveformDisplay < 3) {
       switch (vco2RangeDisplay) {
-        case 0x00:
+        case 0:
           StratuslfoWaveform = "64 Foot";
           break;
 
-        case 0x10:
+        case 1:
           StratuslfoWaveform = "32 Foot";
           break;
 
-        case 0x30:
+        case 2:
           StratuslfoWaveform = "16 Foot";
           break;
 
-        case 0x50:
+        case 3:
           StratuslfoWaveform = "8 Foot";
           break;
 
-        case 0x70:
+        case 4:
           StratuslfoWaveform = "4 Foot";
           break;
 
-        case 0x7F:
+        case 5:
           StratuslfoWaveform = "2 Foot";
           break;
       }
       showCurrentParameterPage("VCO2 Range", StratuslfoWaveform);
     } else {
-      showCurrentParameterPage("VCO2 Low Range", vco2RangeDisplay);
+      showCurrentParameterPage("VCO2 Low Range", lowvco2RangeDisplay);
     }
   }
   if (upperSW) {
@@ -1915,9 +1947,19 @@ void updatevco2Waveform(boolean announce) {
   if (upperSW) {
     midiCCOut(CCvco2Waveform, upperData[P_vco2Waveform]);
     midiCCOutUpper(CCvco2Waveform, upperData[P_vco2Waveform]);
+    if (upperData[P_vco2Waveform] > 2) {
+      mcp3.digitalWrite(VCO2_RANGE_LED, HIGH);
+    } else {
+      mcp3.digitalWrite(VCO2_RANGE_LED, LOW);
+    }
   } else {
     midiCCOut(CCvco2Waveform, lowerData[P_vco2Waveform]);
     midiCCOutLower(CCvco2Waveform, lowerData[P_vco2Waveform]);
+    if (lowerData[P_vco2Waveform] > 2) {
+      mcp3.digitalWrite(VCO2_RANGE_LED, HIGH);
+    } else {
+      mcp3.digitalWrite(VCO2_RANGE_LED, LOW);
+    }
     if (wholemode) {
       midiCCOutUpper(CCvco2Waveform, upperData[P_vco2Waveform]);
     }
@@ -2454,7 +2496,7 @@ void updatevcoModSelSW(boolean announce) {
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO1");
         }
-        midiCCOutUpper(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
+        midiCCOutLower(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, HIGH);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_RED, LOW);
         if (wholemode) {
@@ -2466,7 +2508,7 @@ void updatevcoModSelSW(boolean announce) {
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO1 & VCO2");
         }
-        midiCCOutUpper(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
+        midiCCOutLower(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, HIGH);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_RED, HIGH);
         if (wholemode) {
@@ -2478,7 +2520,7 @@ void updatevcoModSelSW(boolean announce) {
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO2");
         }
-        midiCCOutUpper(CCvcoModSelSW, upperData[P_vcoModSelSW]);
+        midiCCOutLower(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, LOW);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_RED, HIGH);
         if (wholemode) {
@@ -2526,7 +2568,7 @@ void updatePWMModSW(boolean announce) {
         if (announce) {
           showCurrentParameterPage("PWM Mod Src", "ENV1");
         }
-        midiCCOutUpper(CCPWMModSW, lowerData[P_PWMModSW]);
+        midiCCOutLower(CCPWMModSW, lowerData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, LOW);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_RED, HIGH);
         if (wholemode) {
@@ -2538,7 +2580,7 @@ void updatePWMModSW(boolean announce) {
         if (announce) {
           showCurrentParameterPage("PWM Mod Src", "Manual");
         }
-        midiCCOutUpper(CCPWMModSW, lowerData[P_PWMModSW]);
+        midiCCOutLower(CCPWMModSW, lowerData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, HIGH);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_RED, HIGH);
         if (wholemode) {
@@ -2550,7 +2592,7 @@ void updatePWMModSW(boolean announce) {
         if (announce) {
           showCurrentParameterPage("PWM Mod Src", "LFO");
         }
-        midiCCOutUpper(CCPWMModSW, upperData[P_PWMModSW]);
+        midiCCOutLower(CCPWMModSW, lowerData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, HIGH);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_RED, LOW);
         if (wholemode) {
@@ -2561,7 +2603,7 @@ void updatePWMModSW(boolean announce) {
   }
 }
 
-void updatevcaModSW (boolean announce) {
+void updatevcaModSW(boolean announce) {
 
   if (upperSW) {
     switch (upperData[P_vcaModSW]) {
@@ -2607,7 +2649,7 @@ void updatevcaModSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "Off");
         }
-        midiCCOutUpper(CCvcaModSW, lowerData[P_vcaModSW]);
+        midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, LOW);
         mcp7.digitalWrite(VCA_MOD_LED_RED, LOW);
         if (wholemode) {
@@ -2619,7 +2661,7 @@ void updatevcaModSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "1");
         }
-        midiCCOutUpper(CCvcaModSW, lowerData[P_vcaModSW]);
+        midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, LOW);
         mcp7.digitalWrite(VCA_MOD_LED_RED, HIGH);
         if (wholemode) {
@@ -2631,7 +2673,7 @@ void updatevcaModSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "2");
         }
-        midiCCOutUpper(CCvcaModSW, upperData[P_vcaModSW]);
+        midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, HIGH);
         mcp7.digitalWrite(VCA_MOD_LED_RED, LOW);
         if (wholemode) {
@@ -2643,7 +2685,7 @@ void updatevcaModSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "3");
         }
-        midiCCOutUpper(CCvcaModSW, upperData[P_vcaModSW]);
+        midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, HIGH);
         mcp7.digitalWrite(VCA_MOD_LED_RED, HIGH);
         if (wholemode) {
@@ -2700,7 +2742,7 @@ void updateenv1InvertSW(boolean announce) {
   }
 }
 
-void updateenv2KeyFollowSW (boolean announce) {
+void updateenv2KeyFollowSW(boolean announce) {
 
   if (upperSW) {
     switch (upperData[P_env2KeyFollowSW]) {
@@ -2746,7 +2788,7 @@ void updateenv2KeyFollowSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Key Follow", "Off");
         }
-        midiCCOutUpper(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
+        midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, LOW);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_RED, LOW);
         if (wholemode) {
@@ -2758,7 +2800,7 @@ void updateenv2KeyFollowSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV1");
         }
-        midiCCOutUpper(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
+        midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, LOW);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_RED, HIGH);
         if (wholemode) {
@@ -2770,7 +2812,7 @@ void updateenv2KeyFollowSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV2");
         }
-        midiCCOutUpper(CCenv2KeyFollowSW, upperData[P_env2KeyFollowSW]);
+        midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, HIGH);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_RED, LOW);
         if (wholemode) {
@@ -2782,7 +2824,7 @@ void updateenv2KeyFollowSW (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV1 & 2");
         }
-        midiCCOutUpper(CCenv2KeyFollowSW, upperData[P_env2KeyFollowSW]);
+        midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, HIGH);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_RED, HIGH);
         if (wholemode) {
@@ -2793,7 +2835,7 @@ void updateenv2KeyFollowSW (boolean announce) {
   }
 }
 
-void updatechorus (boolean announce) {
+void updatechorus(boolean announce) {
 
   if (upperSW) {
     switch (upperData[P_chorus]) {
@@ -2839,7 +2881,7 @@ void updatechorus (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Chorus", "Off");
         }
-        midiCCOutUpper(CCchorus, lowerData[P_chorus]);
+        midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, LOW);
         mcp8.digitalWrite(CHORUS_LED_RED, LOW);
         if (wholemode) {
@@ -2851,7 +2893,7 @@ void updatechorus (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Chorus", "1");
         }
-        midiCCOutUpper(CCchorus, lowerData[P_chorus]);
+        midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, LOW);
         mcp8.digitalWrite(CHORUS_LED_RED, HIGH);
         if (wholemode) {
@@ -2863,7 +2905,7 @@ void updatechorus (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Chorus", "2");
         }
-        midiCCOutUpper(CCchorus, upperData[P_chorus]);
+        midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, HIGH);
         mcp8.digitalWrite(CHORUS_LED_RED, LOW);
         if (wholemode) {
@@ -2875,7 +2917,7 @@ void updatechorus (boolean announce) {
         if (announce) {
           showCurrentParameterPage("Chorus", "1 & 2");
         }
-        midiCCOutUpper(CCchorus, upperData[P_chorus]);
+        midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, HIGH);
         mcp8.digitalWrite(CHORUS_LED_RED, HIGH);
         if (wholemode) {
@@ -2954,7 +2996,7 @@ void updatevcoModSW(boolean announce) {
 
       mcp1.digitalWrite(VCO_LFO_LED, LOW);
       if (wholemode) {
-
+        upperData[P_vcoModSW] = lowerData[P_vcoModSW];
       }
     } else {
       if (announce) {
@@ -2964,7 +3006,7 @@ void updatevcoModSW(boolean announce) {
 
       mcp1.digitalWrite(VCO_LFO_LED, HIGH);
       if (wholemode) {
-
+        upperData[P_vcoModSW] = lowerData[P_vcoModSW];
       }
     }
   }
@@ -2977,14 +3019,12 @@ void updatevcfModSW(boolean announce) {
         showCurrentParameterPage("VCF ModWheel", "Off");
       }
       midiCCOut(CCvcfModSW, upperData[P_vcfModSW]);
-
       mcp1.digitalWrite(VCF_LFO_LED, LOW);
     } else {
       if (announce) {
         showCurrentParameterPage("VCF ModWheel", "On");
       }
       midiCCOut(CCvcfModSW, upperData[P_vcfModSW]);
-
       mcp1.digitalWrite(VCF_LFO_LED, HIGH);
     }
   } else {
@@ -2993,69 +3033,19 @@ void updatevcfModSW(boolean announce) {
         showCurrentParameterPage("VCF ModWheel", "Off");
       }
       midiCCOut(CCvcfModSW, lowerData[P_vcfModSW]);
-
       mcp1.digitalWrite(VCF_LFO_LED, LOW);
       if (wholemode) {
-
+        upperData[P_vcfModSW] = lowerData[P_vcfModSW];
       }
     } else {
       if (announce) {
         showCurrentParameterPage("VCF ModWheel", "On");
       }
       midiCCOut(CCvcfModSW, lowerData[P_vcfModSW]);
-
       mcp1.digitalWrite(VCF_LFO_LED, HIGH);
       if (wholemode) {
-
+        upperData[P_vcfModSW] = lowerData[P_vcfModSW];
       }
-    }
-  }
-}
-
-void updatevco2RangeSW(boolean announce) {
-  if (upperSW) {
-    if (!upperData[P_vco2RangeSW]) {
-      if (announce) {
-        showCurrentParameterPage("VCO2 Range", "Normal");
-      }
-      midiCCOut(CCvco2RangeSW, 0);
-      if (upperData[P_vco2Waveform] > 2) {
-        upperData[P_vco2Waveform] = (upperData[P_vco2Waveform] - 3 );
-        updatevco2Waveform(0);
-      }
-      mcp3.digitalWrite(VCO2_RANGE_LED, LOW);
-    } else {
-      if (announce) {
-        showCurrentParameterPage("VCO2 Range", "Low");
-      }
-      midiCCOut(CCvco2RangeSW, 1);
-      if (upperData[P_vco2Waveform] < 3) {
-        upperData[P_vco2Waveform] = (upperData[P_vco2Waveform] + 3 );
-        updatevco2Waveform(0);
-      }
-      mcp3.digitalWrite(VCO2_RANGE_LED, HIGH);
-    }
-  } else {
-    if (!lowerData[P_vco2RangeSW]) {
-      if (announce) {
-        showCurrentParameterPage("VCO2 Range", "Normal");
-      }
-      midiCCOut(CCvco2RangeSW, 0);
-      if (lowerData[P_vco2Waveform] > 2) {
-        lowerData[P_vco2Waveform] = (lowerData[P_vco2Waveform] - 3 );
-        updatevco2Waveform(0);
-      }
-      mcp3.digitalWrite(VCO2_RANGE_LED, LOW);
-    } else {
-      if (announce) {
-        showCurrentParameterPage("VCO2 Range", "Low");
-      }
-      midiCCOut(CCvco2RangeSW, 1);
-      if (lowerData[P_vco2Waveform] < 3) {
-        lowerData[P_vco2Waveform] = (lowerData[P_vco2Waveform] + 3 );
-        updatevco2Waveform(0);
-      }
-      mcp3.digitalWrite(VCO2_RANGE_LED, HIGH);
     }
   }
 }
@@ -3159,6 +3149,54 @@ void updatePatchname() {
 void myControlChange(byte channel, byte control, int value) {
 
   switch (control) {
+
+    case CCmodwheel:
+      {
+        uint8_t mw = value;  // 0..127
+
+        uint8_t vcodepthLower10 = lowerData[P_vcoLfoModDepth];  // 0..10
+        uint8_t vcodepthUpper10 = upperData[P_vcoLfoModDepth];  // 0..10
+
+        // Scale by 10 (with rounding)
+        uint8_t vcomwScaledLower = (uint16_t(mw) * vcodepthLower10 + 5) / 10;
+        uint8_t vcomwScaledUpper = (uint16_t(mw) * vcodepthUpper10 + 5) / 10;
+
+        if (lowerData[P_vcoModSW]) {
+          if (vcomwScaledLower > 0) {
+            midiCCOutLower(CCmodwheel, vcomwScaledLower);
+            if (wholemode) {
+              midiCCOutUpper(CCmodwheel, vcomwScaledLower);
+            }
+          }
+        }
+        if (upperData[P_vcoModSW] && !wholemode) {
+          if (vcomwScaledUpper > 0) {
+            midiCCOutUpper(CCmodwheel, vcomwScaledUpper);
+          }
+        }
+
+        uint8_t vcfdepthLower10 = lowerData[P_vcfLfoModDepth];  // 0..10
+        uint8_t vcfdepthUpper10 = upperData[P_vcfLfoModDepth];  // 0..10
+
+        // Scale by 10 (with rounding)
+        uint8_t vcfmwScaledLower = (uint16_t(mw) * vcfdepthLower10 + 5) / 10;
+        uint8_t vcfmwScaledUpper = (uint16_t(mw) * vcfdepthUpper10 + 5) / 10;
+
+        if (lowerData[P_vcfModSW]) {
+          if (vcfmwScaledLower > 0) {
+            midiCCOutLower(CCvcfLfoDepth, vcfmwScaledLower);
+            if (wholemode) {
+              midiCCOutUpper(CCvcfLfoDepth, vcfmwScaledLower);
+            }
+          }
+        }
+        if (upperData[P_vcfModSW] && !wholemode) {
+          if (vcfmwScaledUpper > 0) {
+            midiCCOutUpper(CCvcfLfoDepth, vcfmwScaledUpper);
+          }
+        }
+        break;
+      }
 
     case CCdual_button:
       updatedual_button(1);
@@ -3460,6 +3498,34 @@ void myControlChange(byte channel, byte control, int value) {
       updatearpRate(1);
       break;
 
+    case CCvcoLfoModDepth:
+      value = map(value, 0, 127, 0, 10);
+      if (upperSW) {
+        upperData[P_vcoLfoModDepth] = value;
+      } else {
+        lowerData[P_vcoLfoModDepth] = value;
+        if (wholemode) {
+          upperData[P_vcoLfoModDepth] = value;
+        }
+      }
+      vcoLfoModDepthstr = value;  // for display
+      updatevcoLfoModDepth(1);
+      break;
+
+    case CCvcfLfoModDepth:
+      value = map(value, 0, 127, 0, 10);
+      if (upperSW) {
+        upperData[P_vcfLfoModDepth] = value;
+      } else {
+        lowerData[P_vcfLfoModDepth] = value;
+        if (wholemode) {
+          upperData[P_vcfLfoModDepth] = value;
+        }
+      }
+      vcfLfoModDepthstr = value;  // for display
+      updatevcfLfoModDepth(1);
+      break;
+
     case CCenv1Attack:
       if (upperSW) {
         upperData[P_env1Attack] = value;
@@ -3675,7 +3741,7 @@ void myControlChange(byte channel, byte control, int value) {
         lowerData[P_env1InvertSW] = !lowerData[P_env1InvertSW];
         if (wholemode) {
           upperData[P_env1InvertSW] = lowerData[P_env1InvertSW];
-        } 
+        }
       }
       updateenv1InvertSW(1);
       break;
@@ -3693,7 +3759,7 @@ void myControlChange(byte channel, byte control, int value) {
         }
         if (wholemode) {
           upperData[P_env2KeyFollowSW] = lowerData[P_env2KeyFollowSW];
-        } 
+        }
       }
       updateenv2KeyFollowSW(1);
       break;
@@ -3711,7 +3777,7 @@ void myControlChange(byte channel, byte control, int value) {
         }
         if (wholemode) {
           upperData[P_chorus] = lowerData[P_chorus];
-        } 
+        }
       }
       updatechorus(1);
       break;
@@ -3723,7 +3789,7 @@ void myControlChange(byte channel, byte control, int value) {
         lowerData[P_vcfSlopeSW] = !lowerData[P_vcfSlopeSW];
         if (wholemode) {
           upperData[P_vcfSlopeSW] = lowerData[P_vcfSlopeSW];
-        } 
+        }
       }
       updatevcfSlopeSW(1);
       break;
@@ -3735,21 +3801,9 @@ void myControlChange(byte channel, byte control, int value) {
         lowerData[P_vcfEgSelectSW] = !lowerData[P_vcfEgSelectSW];
         if (wholemode) {
           upperData[P_vcfEgSelectSW] = lowerData[P_vcfEgSelectSW];
-        } 
+        }
       }
       updatevcfEgSelectSW(1);
-      break;
-
-    case CCvco2RangeSW:
-      if (upperSW) {
-        upperData[P_vco2RangeSW] = !upperData[P_vco2RangeSW];
-      } else {
-        lowerData[P_vco2RangeSW] = !lowerData[P_vco2RangeSW];
-        if (wholemode) {
-          upperData[P_vco2RangeSW] = lowerData[P_vco2RangeSW];
-        } 
-      }
-      updatevco2RangeSW(1);
       break;
 
     case CCvcoModSelSW:
@@ -3765,7 +3819,7 @@ void myControlChange(byte channel, byte control, int value) {
         }
         if (wholemode) {
           upperData[P_vcoModSelSW] = lowerData[P_vcoModSelSW];
-        }       
+        }
       }
       updatevcoModSelSW(1);
       break;
@@ -3835,12 +3889,70 @@ void myControlChange(byte channel, byte control, int value) {
       break;
 
     case CCvco2Range:
+      lowvco2RangeDisplay = value;
+      value = map(value, 0, 127, 0, 5);
       if (upperSW) {
-        upperData[P_vco2Range] = value;
+        if (upperData[P_vco2Waveform] < 3) {
+        switch (value) {
+          case 0:
+            upperData[P_vco2Range] = 0x00;
+            break;
+
+          case 1:
+            upperData[P_vco2Range] = 0x10;
+            break;
+
+          case 2:
+            upperData[P_vco2Range] = 0x30;
+            break;
+
+          case 3:
+            upperData[P_vco2Range] = 0x50;
+            break;
+
+          case 4:
+            upperData[P_vco2Range] = 0x70;
+            break;
+
+          case 5:
+            upperData[P_vco2Range] = 0x7F;
+            break;
+        }
+        } else {
+          upperData[P_vco2Range] = lowvco2RangeDisplay;
+        }
       } else {
-        lowerData[P_vco2Range] = value;
+        if (lowerData[P_vco2Waveform] < 3) {
+        switch (value) {
+          case 0:
+            lowerData[P_vco2Range] = 0x00;
+            break;
+
+          case 1:
+            lowerData[P_vco2Range] = 0x10;
+            break;
+
+          case 2:
+            lowerData[P_vco2Range] = 0x30;
+            break;
+
+          case 3:
+            lowerData[P_vco2Range] = 0x50;
+            break;
+
+          case 4:
+            lowerData[P_vco2Range] = 0x70;
+            break;
+
+          case 5:
+            lowerData[P_vco2Range] = 0x7F;
+            break;
+        }
+        } else {
+          lowerData[P_vco2Range] = lowvco2RangeDisplay;
+        }
         if (wholemode) {
-          upperData[P_vco2Range] = value;
+          upperData[P_vco2Range] = lowerData[P_vco2Range];
         }
       }
       vco2RangeDisplay = value;
@@ -4076,6 +4188,8 @@ void upperParamsToDisplay() {
   updatevco1Waveform(0);
   updatevco2Waveform(0);
   updatelfoWaveform(0);
+  updatevcoLfoModDepth(0);
+  updatevcfLfoModDepth(0);
 }
 
 void lowerParamsToDisplay() {
@@ -4109,6 +4223,8 @@ void lowerParamsToDisplay() {
   updatevco1Waveform(0);
   updatevco2Waveform(0);
   updatelfoWaveform(0);
+  updatevcoLfoModDepth(0);
+  updatevcfLfoModDepth(0);
 }
 
 void setAllButtons() {
@@ -4121,7 +4237,6 @@ void setAllButtons() {
   updatevcfModSW(0);
   updatevcoModSelSW(0);
   updatePWMModSW(0);
-  updatevco2RangeSW(0);
   updatevcfSlopeSW(0);
   updatevcfEgSelectSW(0);
   updateenv1InvertSW(0);
@@ -4975,10 +5090,10 @@ void checkMux() {
         //myControlChange(midiChannel, CClfo1_rate, mux1Read);
         break;
       case MUX1_VCO_MOD:
-        //myControlChange(midiChannel, CClfo1_delay, mux1Read);
+        myControlChange(midiChannel, CCvcoLfoModDepth, mux1Read);
         break;
       case MUX1_VCF_MOD:
-        //myControlChange(midiChannel, CClfo1_lfo2, mux1Read);
+        myControlChange(midiChannel, CCvcfLfoModDepth, mux1Read);
         break;
       case MUX1_GLIDE_TIME:
         myControlChange(midiChannel, CCglideTime, mux1Read);

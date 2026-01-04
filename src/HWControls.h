@@ -362,8 +362,8 @@ Button *allButtons[] = {
 #define SETTINGS_SW 22
 #define BACK_SW 23
 
-#define ENCODER_PINA 4
-#define ENCODER_PINB 5
+#define ENCODER_PINA 5
+#define ENCODER_PINB 4
 
 #define DEBOUNCE 30
 #define MUXCHANNELS 16

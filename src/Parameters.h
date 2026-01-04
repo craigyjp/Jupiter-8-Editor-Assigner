@@ -105,6 +105,7 @@ int panelData[77];
 #define P_chorus 59
 #define P_vcfModSW 60
 
+
 int playMode = 0;
 int glideSW = 0;
 int vcoBendSW = 0;
@@ -171,6 +172,7 @@ int vco1Waveformstr = 0;
 int vco1WaveformDisplay = 0;
 int vco2Rangestr = 0;
 int vco2RangeDisplay = 0;
+int lowvco2RangeDisplay = 0;
 int vco2Waveformstr = 0;
 int vco2WaveformDisplay = 0;
 float vco2Finestr = 0;
@@ -188,6 +190,9 @@ int delayLevelstr = 0;
 int delayTimestr = 0;
 int delayFeedbackstr = 0;
 int bendRangestr = 0;
+int vcoLfoModDepthstr = 0;
+int vcfLfoModDepthstr = 0;
+
 
 float afterTouch = 0;
 float afterTouchU = 0;
