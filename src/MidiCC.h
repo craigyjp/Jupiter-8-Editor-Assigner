@@ -67,8 +67,8 @@
 // Not accessible over MIDI to the JP-08
 
 #define   CCvcoBendSW     88
-#define   CCvcfBendRange  89
-#define   CCvcfBendSW     90
+#define   CCATDepth       89
+#define   CCATDestSW      90
 #define   CCvcoModSW      94
 #define   CCvcfModSW      95
 #define   CCvco2RangeSW   96

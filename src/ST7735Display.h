@@ -6,7 +6,6 @@
 
 #define DISPLAYTIMEOUT 1500
 
-#include "TeensyThreads.h"
 #include <Adafruit_GFX.h>
 #include <ST7735_t3.h>  // Hardware-specific library
 #include <ST7789_t3.h>  // Hardware-specific library
@@ -692,9 +691,7 @@ void showSettingsPage(const char *option, const char *value, int settingsPart) {
   currentSettingsPart = settingsPart;
 }
 
-void displayThread() {
-  threads.delay(2000);  //Give bootup page chance to display
-  while (1) {
+void updateScreen() {
     switch (state) {
       case PARAMETER:
         if ((millis() - timer) > DISPLAYTIMEOUT) {
@@ -712,7 +709,6 @@ void displayThread() {
       case REINITIALISE:
         renderReinitialisePage();
         tft.updateScreen();  //update before delay
-        threads.delay(1000);
         state = PARAMETER;
         break;
       case PATCHNAMING:
@@ -747,7 +743,6 @@ void displayThread() {
         break;
     }
     tft.updateScreen();
-  }
 }
 
 void setupDisplay() {
@@ -758,5 +753,5 @@ void setupDisplay() {
   tft.fillScreen(ST7735_BLACK);
   renderBootUpPage();
   tft.updateScreen();
-  threads.addThread(displayThread);
+  //threads.addThread(displayThread);
 }

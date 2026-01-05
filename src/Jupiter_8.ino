@@ -36,21 +36,6 @@ std::map<int, int> voiceAssignment;
 
 unsigned int state = PARAMETER;
 
-uint32_t int_ref_on_flexible_mode = 0b00001001000010100000000000000000;  // { 0000 , 1001 , 0000 , 1010000000000000 , 0000 }
-
-uint32_t sample_data1 = 0b00000000000000000000000000000000;
-uint32_t sample_data2 = 0b00000000000000000000000000000000;
-uint32_t sample_data3 = 0b00000000000000000000000000000000;
-uint32_t sample_data4 = 0b00000000000000000000000000000000;
-uint32_t channel_a = 0b00000010000000000000000000000000;
-uint32_t channel_b = 0b00000010000100000000000000000000;
-uint32_t channel_c = 0b00000010001000000000000000000000;
-uint32_t channel_d = 0b00000010001100000000000000000000;
-uint32_t channel_e = 0b00000010010000000000000000000000;
-uint32_t channel_f = 0b00000010010100000000000000000000;
-uint32_t channel_g = 0b00000010011000000000000000000000;
-uint32_t channel_h = 0b00000010011100000000000000000000;
-
 enum PlayMode {
   WHOLE = 0,
   DUAL = 1,
@@ -111,7 +96,6 @@ int voiceAssignmentUpper[128];
 CircularBuffer<Performance, PERFORMANCES_LIMIT> performances;
 Performance currentPerformance;
 
-
 //USB HOST MIDI Class Compliant
 USBHost myusb;
 USBHub hub1(myusb);
@@ -124,8 +108,6 @@ MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);   // main MIDI in and out
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial6, MIDI6);  // MIDI out to voices
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial7, MIDI7);  // MIDI out to display (not connected)
 
-int count = 0;  //For MIDI Clk Sync
-int DelayForSH3 = 50;
 int patchNo = 0;
 int patchNoU = 0;
 int patchNoL = 0;
@@ -137,13 +119,7 @@ void pollAllMCPs();
 
 void initButtons();
 
-int getEncoderSpeed(int id);
-
 void setup() {
-
-  chordHoldActive = false;
-  chordHoldWaitingForNotes = false;
-  chordHoldCount = 0;
 
   SPI.begin();
   Wire.begin();           // Join the I2C bus as Master
@@ -172,13 +148,6 @@ void setup() {
   setupDisplay();
   setUpSettings();
   setupHardware();
-
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE1));
-  digitalWrite(DAC_CS1, LOW);
-  delayMicroseconds(1);
-  SPI.transfer32(int_ref_on_flexible_mode);
-  digitalWrite(DAC_CS1, HIGH);
-  SPI.endTransaction();
 
   for (int i = 0; i < 128; i++) {
     voiceAssignmentLower[i] = -1;
@@ -258,10 +227,6 @@ void setup() {
   MIDI6.begin();
   MIDI6.turnThruOn(midi::Thru::Mode::Off);
 
-  //Read Aftertouch from EEPROM, this can be set individually by each patch.
-  upperData[P_AfterTouchDest] = getAfterTouchU();
-  lowerData[P_AfterTouchDest] = getAfterTouchL();
-
   splitPoint = getSplitPoint();
   splitPoint = (splitPoint + 36);
 
@@ -270,9 +235,6 @@ void setup() {
 
   //Read Encoder Direction from EEPROM
   encCW = getEncoderDir();
-
-  // Read the encoders accelerate
-  accelerate = getEncoderAccelerate();
 
   //setupDisplay();
   delay(100);
@@ -293,6 +255,13 @@ void setup() {
   recallPatch(patchNoL);  //Load first patch
 }
 
+void startParameterDisplay() {
+  updateScreen();
+
+  lastDisplayTriggerTime = millis();
+  waitingToUpdate = true;
+}
+
 void pollAllMCPs() {
 
   for (int j = 0; j < numMCPs; j++) {
@@ -310,34 +279,6 @@ void initButtons() {
   for (auto &button : allButtons) {
     button->begin();
   }
-}
-
-int getEncoderSpeed(int id) {
-  if (id < 1 || id > numEncoders) return 1;
-
-  unsigned long now = millis();
-  unsigned long dt = now - lastTransition[id];
-
-  // Linear acceleration mapping
-  float minMult = 1.0f;
-  float maxMult = 10.0f;
-  float minDt = 30.0f;   // Fastest spins
-  float maxDt = 350.0f;  // Slowest for any acceleration
-
-  float mult;
-  if (dt < minDt)
-    mult = maxMult;
-  else if (dt > maxDt)
-    mult = minMult;
-  else
-    mult = maxMult - (maxMult - minMult) * ((dt - minDt) / (maxDt - minDt));
-
-  // Optional: smooth multiplier for less jumpy response
-  float alpha = 0.5f;  // 0.0 = no smoothing, 1.0 = max smoothing
-  lastSpeed[id] = alpha * mult + (1.0f - alpha) * lastSpeed[id];
-
-  lastTransition[id] = now;
-  return (int)(lastSpeed[id] + 0.5f);
 }
 
 void mainButtonChanged(Button *btn, bool released) {
@@ -426,9 +367,9 @@ void mainButtonChanged(Button *btn, bool released) {
       }
       break;
 
-    case VCF_BEND_BUTTON:
+    case AT_DEST_BUTTON:
       if (!released) {
-        myControlChange(midiChannel, CCvcfBendSW, 1);
+        myControlChange(midiChannel, CCATDestSW, 1);
       }
       break;
 
@@ -1075,9 +1016,11 @@ void commandMonoNoteOffLower(byte note) {
 
 void commandUnisonNoteOnUpper(byte note, byte velocity) {
   notesUpper[note] = true;
-  noteMsg = note;                                       // explicitly set here
-  noteVel = velocity;                                   // explicitly set here
-  commandLastNoteUniUpper();                       // Last note priority
+  noteMsg = note;      // explicitly set here
+  noteVel = velocity;  // explicitly set here
+  orderIndxWhole = (orderIndxWhole + 1) % 40;
+  noteOrderUpper[orderIndxUpper] = note;
+  commandLastNoteUniUpper();  // Last note priority
 }
 
 void commandUnisonNoteOffUpper(byte note) {
@@ -1088,9 +1031,11 @@ void commandUnisonNoteOffUpper(byte note) {
 
 void commandUnisonNoteOnLower(byte note, byte velocity) {
   notesLower[note] = true;
-  noteMsg = note;                                       // explicitly set here
-  noteVel = velocity;                                   // explicitly set here
-  commandLastNoteUniLower();                       // Last note priority
+  noteMsg = note;      // explicitly set here
+  noteVel = velocity;  // explicitly set here
+  orderIndxWhole = (orderIndxWhole + 1) % 40;
+  noteOrderLower[orderIndxLower] = note;
+  commandLastNoteUniLower();  // Last note priority
 }
 
 void commandUnisonNoteOffLower(byte note) {
@@ -1334,6 +1279,7 @@ void allNotesOff() {
 void updatePWMMod(boolean announce) {
   if (announce) {
     showCurrentParameterPage("VCO PWM", int(PWMModstr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCPWMMod, upperData[P_PWMMod]);
@@ -1350,6 +1296,7 @@ void updatePWMMod(boolean announce) {
 void updatecrossMod(boolean announce) {
   if (announce) {
     showCurrentParameterPage("VCO Cross Mod", int(crossModstr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCcrossMod, upperData[P_crossMod]);
@@ -1382,6 +1329,7 @@ void updateglideTime(boolean announce) {
 void updateFilterCutoff(boolean announce) {
   if (announce) {
     showCurrentParameterPage("Cutoff", String(filterCutoffstr) + " Hz");
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCfilterCutoff, upperData[P_filterCutoff]);
@@ -1414,6 +1362,7 @@ void updatevcfLfoDepth(boolean announce) {
 void updateresonance(boolean announce) {
   if (announce) {
     showCurrentParameterPage("Resonance", int(resonancestr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCresonance, upperData[P_resonance]);
@@ -1430,6 +1379,7 @@ void updateresonance(boolean announce) {
 void updatevcfEnvDepth(boolean announce) {
   if (announce) {
     showCurrentParameterPage("EG Depth", int(vcfEnvDepthstr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvcfEnvDepth, upperData[P_vcfEnvDepth]);
@@ -1446,6 +1396,7 @@ void updatevcfEnvDepth(boolean announce) {
 void updatevcfKeyFollow(boolean announce) {
   if (announce) {
     showCurrentParameterPage("Key Follow", String(vcfKeyFollowstr) + " %");
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvcfKeyFollow, upperData[P_vcfKeyFollow]);
@@ -1462,6 +1413,7 @@ void updatevcfKeyFollow(boolean announce) {
 void updatevcaLevel(boolean announce) {
   if (announce) {
     showCurrentParameterPage("VCA Level", String(vcaLevelstr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvcaLevel, upperData[P_vcaLevel]);
@@ -1478,6 +1430,7 @@ void updatevcaLevel(boolean announce) {
 void updatebendRange(boolean announce) {
   if (announce) {
     showCurrentParameterPage("Bend Range", String(bendRangestr) + " Semitones");
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCbendRange, upperData[P_vcoBendRange]);
@@ -1495,6 +1448,24 @@ void updatebendRange(boolean announce) {
   }
 }
 
+void updateATDepth(boolean announce) {
+  if (announce) {
+    if (ATDepthstr == 0) {
+      showCurrentParameterPage("Aftertouch Depth", "Off");
+    } else {
+      showCurrentParameterPage("Aftertouch Depth", String(ATDepthstr));
+    }
+    startParameterDisplay();
+  }
+  if (upperSW) {
+
+  } else {
+    if (wholemode) {
+      upperData[P_ATDepth] = lowerData[P_ATDepth];
+    }
+  }
+}
+
 void updatedelayLevel(boolean announce) {
   if (announce) {
     if (delayLevelstr == 0) {
@@ -1502,6 +1473,7 @@ void updatedelayLevel(boolean announce) {
     } else {
       showCurrentParameterPage("Delay Level", String(delayLevelstr));
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCdelayLevel, upperData[P_delayLevel]);
@@ -1522,6 +1494,7 @@ void updatedelayTime(boolean announce) {
     } else {
       showCurrentParameterPage("Delay Time", String(delayTimestr));
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCdelayTime, upperData[P_delayTime]);
@@ -1542,6 +1515,7 @@ void updatedelayFeedback(boolean announce) {
     } else {
       showCurrentParameterPage("Delay Feedback", String(delayFeedbackstr));
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCdelayFeedback, upperData[P_delayFeedback]);
@@ -1559,6 +1533,7 @@ void updateLFORate(boolean announce) {
 
   if (announce) {
     showCurrentParameterPage("LFO Rate", String(LFORatestr) + " Hz");
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CClfoRate, upperData[P_lfoRate]);
@@ -1576,6 +1551,7 @@ void updatearpRate(boolean announce) {
 
   if (announce) {
     showCurrentParameterPage("Arp Rate", String(arpRatestr) + " Hz");
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCarpRate, upperData[P_arpRate]);
@@ -1596,6 +1572,7 @@ void updatevcoLfoModDepth(boolean announce) {
     } else {
       showCurrentParameterPage("VCO MW Mod Dep ", String(vcoLfoModDepthstr));
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvcoLfoModDepth, upperData[P_vcoLfoModDepth]);
@@ -1615,6 +1592,7 @@ void updatevcfLfoModDepth(boolean announce) {
     } else {
       showCurrentParameterPage("VCF MW Mod Dep ", String(vcfLfoModDepthstr));
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvcfLfoModDepth, upperData[P_vcfLfoModDepth]);
@@ -1629,6 +1607,7 @@ void updatevcfLfoModDepth(boolean announce) {
 void updatelfoDelay(boolean announce) {
   if (announce) {
     showCurrentParameterPage("LFO Delay", String(lfoDelaystr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CClfoDelay, upperData[P_lfoDelay]);
@@ -1645,6 +1624,7 @@ void updatelfoDelay(boolean announce) {
 void updatevcoLfoMod(boolean announce) {
   if (announce) {
     showCurrentParameterPage("LFO VCO Mod", String(vcoLfoModstr));
+    startParameterDisplay();
   }
   midiCCOut(CCvcoLfoMod, upperData[P_vcoLfoMod]);
   if (upperSW) {
@@ -1660,6 +1640,7 @@ void updatevcoLfoMod(boolean announce) {
 void updatevcoEnvMod(boolean announce) {
   if (announce) {
     showCurrentParameterPage("ENV VCO Mod", String(vcoEnvModstr));
+    startParameterDisplay();
   }
   midiCCOut(CCvcoEnvMod, upperData[P_vcoEnvMod]);
   if (upperSW) {
@@ -1701,6 +1682,7 @@ void updatelfoWaveform(boolean announce) {
         break;
     }
     showCurrentParameterPage("LFO Wave", StratuslfoWaveform);
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOutUpper(CClfoWaveform, upperData[P_lfoWaveform]);
@@ -1741,6 +1723,7 @@ void updatevco1Range(boolean announce) {
         break;
     }
     showCurrentParameterPage("VCO1 Range", StratuslfoWaveform);
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvco1Range, upperData[P_vco1Range]);
@@ -1783,6 +1766,7 @@ void updatevco1Waveform(boolean announce) {
         break;
     }
     showCurrentParameterPage("VCO1 Waveform", StratuslfoWaveform);
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvco1Waveform, upperData[P_vco1Waveform]);
@@ -1829,6 +1813,7 @@ void updatevco2Range(boolean announce) {
     } else {
       showCurrentParameterPage("VCO2 Low Range", lowvco2RangeDisplay);
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvco2Range, upperData[P_vco2Range]);
@@ -1871,6 +1856,7 @@ void updatevco2Waveform(boolean announce) {
         break;
     }
     showCurrentParameterPage("VCO2 Waveform", StratuslfoWaveform);
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvco2Waveform, upperData[P_vco2Waveform]);
@@ -1901,6 +1887,7 @@ void updatevco2Fine(boolean announce) {
     } else {
       showCurrentParameterPage("VCO2 Fine Tune", String(vco2Finestr));
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvco2Fine, upperData[P_vco2Fine]);
@@ -1921,6 +1908,7 @@ void updatevcoBalance(boolean announce) {
     } else {
       showCurrentParameterPage("VCO Balance", String(vcoBalancestr));
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvcoBalance, upperData[P_vcoBalance]);
@@ -1937,6 +1925,7 @@ void updatevcoBalance(boolean announce) {
 void updateHPF(boolean announce) {
   if (announce) {
     showCurrentParameterPage("HPF Cutoff", String(HPFstr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCHPF, upperData[P_HPF]);
@@ -1957,6 +1946,7 @@ void updateenv1Attack(boolean announce) {
     } else {
       showCurrentParameterPage("ENV1 Attack", String(env1Attackstr * 0.001) + " s", FILTER_ENV);
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv1Attack, upperData[P_env1Attack]);
@@ -1977,6 +1967,7 @@ void updateenv1Decay(boolean announce) {
     } else {
       showCurrentParameterPage("ENV1 Decay", String(env1Decaystr * 0.001) + " s", FILTER_ENV);
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv1Decay, upperData[P_env1Decay]);
@@ -1993,6 +1984,7 @@ void updateenv1Decay(boolean announce) {
 void updateenv1Sustain(boolean announce) {
   if (announce) {
     showCurrentParameterPage("ENV1 Sustain", String(env1Sustainstr), FILTER_ENV);
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv1Sustain, upperData[P_env1Sustain]);
@@ -2013,6 +2005,7 @@ void updateenv1Release(boolean announce) {
     } else {
       showCurrentParameterPage("ENV1 Release", String(env1Releasestr * 0.001) + " s", FILTER_ENV);
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv1Release, upperData[P_env1Release]);
@@ -2033,6 +2026,7 @@ void updateenv2Attack(boolean announce) {
     } else {
       showCurrentParameterPage("ENV2 Attack", String(env2Attackstr * 0.001) + " s", AMP_ENV);
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv2Attack, upperData[P_env2Attack]);
@@ -2053,6 +2047,7 @@ void updateenv2Decay(boolean announce) {
     } else {
       showCurrentParameterPage("ENV2 Decay", String(env2Decaystr * 0.001) + " s", AMP_ENV);
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv2Decay, upperData[P_env2Decay]);
@@ -2069,6 +2064,7 @@ void updateenv2Decay(boolean announce) {
 void updateenv2Sustain(boolean announce) {
   if (announce) {
     showCurrentParameterPage("ENV2 Sustain", String(env2Sustainstr), AMP_ENV);
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv2Sustain, upperData[P_env2Sustain]);
@@ -2089,6 +2085,7 @@ void updateenv2Release(boolean announce) {
     } else {
       showCurrentParameterPage("ENV2 Release", String(env2Releasestr * 0.001) + " s", AMP_ENV);
     }
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCenv2Release, upperData[P_env2Release]);
@@ -2105,6 +2102,7 @@ void updateenv2Release(boolean announce) {
 void updatevolume(boolean announce) {
   if (announce) {
     showCurrentParameterPage("Volume", int(volumestr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCvolume, upperData[P_volume]);
@@ -2117,6 +2115,7 @@ void updatevolume(boolean announce) {
 void updatebalance(boolean announce) {
   if (announce) {
     showCurrentParameterPage("Balance", int(balancestr));
+    startParameterDisplay();
   }
   if (upperSW) {
     midiCCOut(CCbalance, upperData[P_balance]);
@@ -2133,6 +2132,7 @@ void updatedual_button(boolean announce) {
     playMode = 1;
     if (announce) {
       showCurrentParameterPage("Key Mode", "Dual");
+      startParameterDisplay();
     }
     mcp4.digitalWrite(SPLIT_LED, LOW);
     mcp4.digitalWrite(WHOLE_LED, LOW);
@@ -2148,6 +2148,7 @@ void updatewhole_button(boolean announce) {
     playMode = 0;
     if (announce) {
       showCurrentParameterPage("Key Mode", "Whole");
+      startParameterDisplay();
     }
     mcp4.digitalWrite(DUAL_LED, LOW);
     mcp4.digitalWrite(SPLIT_LED, LOW);
@@ -2166,6 +2167,7 @@ void updatesplit_button(boolean announce) {
     playMode = 2;
     if (announce) {
       showCurrentParameterPage("Key Mode", "Split");
+      startParameterDisplay();
     }
     mcp4.digitalWrite(WHOLE_LED, LOW);
     mcp4.digitalWrite(DUAL_LED, LOW);
@@ -2210,6 +2212,7 @@ void updatekeyboardMode(boolean announce) {
     if (upperData[P_keyboardModeSW] == 0) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Poly 1");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(POLY2_LED, LOW);
       mcp3.digitalWrite(SOLO_LED, LOW);
@@ -2220,6 +2223,7 @@ void updatekeyboardMode(boolean announce) {
     } else if (upperData[P_keyboardModeSW] == 1) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Poly 2");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(SOLO_LED, LOW);
       mcp3.digitalWrite(UNISON_LED, LOW);
@@ -2230,6 +2234,7 @@ void updatekeyboardMode(boolean announce) {
     } else if (upperData[P_keyboardModeSW] == 2) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Mono");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(UNISON_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, LOW);
@@ -2240,6 +2245,7 @@ void updatekeyboardMode(boolean announce) {
     } else if (upperData[P_keyboardModeSW] == 3) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Unison");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(POLY2_LED, LOW);
       mcp3.digitalWrite(SOLO_LED, LOW);
@@ -2255,6 +2261,7 @@ void updatekeyboardMode(boolean announce) {
     if (lowerData[P_keyboardModeSW] == 0) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Poly 1");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(POLY2_LED, LOW);
       mcp3.digitalWrite(SOLO_LED, LOW);
@@ -2265,6 +2272,7 @@ void updatekeyboardMode(boolean announce) {
     } else if (lowerData[P_keyboardModeSW] == 1) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Poly 2");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(SOLO_LED, LOW);
       mcp3.digitalWrite(UNISON_LED, LOW);
@@ -2275,6 +2283,7 @@ void updatekeyboardMode(boolean announce) {
     } else if (lowerData[P_keyboardModeSW] == 2) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Mono");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(UNISON_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, LOW);
@@ -2286,6 +2295,7 @@ void updatekeyboardMode(boolean announce) {
     } else if (lowerData[P_keyboardModeSW] == 3) {
       if (announce) {
         showCurrentParameterPage("Keyboard Mode", "Unison");
+        startParameterDisplay();
       }
       mcp3.digitalWrite(POLY2_LED, LOW);
       mcp3.digitalWrite(SOLO_LED, LOW);
@@ -2318,6 +2328,7 @@ void updateglideSW(boolean announce) {
         showCurrentParameterPage("Glide", "On");
         break;
     }
+    startParameterDisplay();
   }
   switch (glideSW) {
     case 0:
@@ -2355,6 +2366,7 @@ void updatevcoBendSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("VCO Bend", "Off");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCbendRange, 0);
         mcp1.digitalWrite(VCO_BEND_LED_GRN, LOW);
@@ -2364,6 +2376,7 @@ void updatevcoBendSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("VCO Bend", "On");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCbendRange, upperData[P_vcoBendRange]);
         mcp1.digitalWrite(VCO_BEND_LED_GRN, LOW);
@@ -2373,6 +2386,7 @@ void updatevcoBendSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("VCO Bend", "2 Octaves");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCbendRange, 0x18);
         mcp1.digitalWrite(VCO_BEND_LED_GRN, HIGH);
@@ -2384,6 +2398,7 @@ void updatevcoBendSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("VCO Bend", "Off");
+          startParameterDisplay();
         }
         midiCCOutLower(CCbendRange, 0);
         mcp1.digitalWrite(VCO_BEND_LED_GRN, LOW);
@@ -2396,6 +2411,7 @@ void updatevcoBendSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("VCO Bend", "On");
+          startParameterDisplay();
         }
         midiCCOutLower(CCbendRange, lowerData[P_vcoBendRange]);
         mcp1.digitalWrite(VCO_BEND_LED_GRN, LOW);
@@ -2408,12 +2424,85 @@ void updatevcoBendSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("VCO Bend", "2 Octaves");
+          startParameterDisplay();
         }
         midiCCOutLower(CCbendRange, 0x18);
         mcp1.digitalWrite(VCO_BEND_LED_GRN, HIGH);
         mcp1.digitalWrite(VCO_BEND_LED_RED, HIGH);
         if (wholemode) {
           midiCCOutUpper(CCbendRange, 0x18);
+        }
+        break;
+    }
+  }
+}
+
+void updateATDestSW(boolean announce) {
+
+  if (upperSW) {
+    switch (upperData[P_AfterTouchDest]) {
+      case 0:
+        if (announce) {
+          showCurrentParameterPage("Aftertouch", "Off");
+          startParameterDisplay();
+        }
+        mcp2.digitalWrite(AT_DEST_LED_GRN, LOW);
+        mcp1.digitalWrite(AT_DEST_LED_RED, LOW);
+        break;
+
+      case 1:
+        if (announce) {
+          showCurrentParameterPage("Aftertouch", "LFO to VCO");
+          startParameterDisplay();
+        }
+        mcp2.digitalWrite(AT_DEST_LED_GRN, LOW);
+        mcp1.digitalWrite(AT_DEST_LED_RED, HIGH);
+        break;
+
+      case 2:
+        if (announce) {
+          showCurrentParameterPage("Aftertouch", "LFO to VCF");
+          startParameterDisplay();
+        }
+        mcp2.digitalWrite(AT_DEST_LED_GRN, HIGH);
+        mcp1.digitalWrite(AT_DEST_LED_RED, LOW);
+        break;
+    }
+  } else {
+    switch (lowerData[P_AfterTouchDest]) {
+      case 0:
+        if (announce) {
+          showCurrentParameterPage("Aftertouch", "Off");
+          startParameterDisplay();
+        }
+        mcp2.digitalWrite(AT_DEST_LED_GRN, LOW);
+        mcp1.digitalWrite(AT_DEST_LED_RED, LOW);
+        if (wholemode) {
+          upperData[P_AfterTouchDest] = lowerData[P_AfterTouchDest];
+        }
+        break;
+
+      case 1:
+        if (announce) {
+          showCurrentParameterPage("Aftertouch", "LFO to VCO");
+          startParameterDisplay();
+        }
+        mcp2.digitalWrite(AT_DEST_LED_GRN, LOW);
+        mcp1.digitalWrite(AT_DEST_LED_RED, HIGH);
+        if (wholemode) {
+          upperData[P_AfterTouchDest] = lowerData[P_AfterTouchDest];
+        }
+        break;
+
+      case 2:
+        if (announce) {
+          showCurrentParameterPage("Aftertouch", "LFO to VCF");
+          startParameterDisplay();
+        }
+        mcp2.digitalWrite(AT_DEST_LED_GRN, HIGH);
+        mcp1.digitalWrite(AT_DEST_LED_RED, LOW);
+        if (wholemode) {
+          upperData[P_AfterTouchDest] = lowerData[P_AfterTouchDest];
         }
         break;
     }
@@ -2427,6 +2516,7 @@ void updatevcoModSelSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO1");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCvcoModSelSW, upperData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, HIGH);
@@ -2436,6 +2526,7 @@ void updatevcoModSelSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO1 & VCO2");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCvcoModSelSW, upperData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, HIGH);
@@ -2445,6 +2536,7 @@ void updatevcoModSelSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO2");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCvcoModSelSW, upperData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, LOW);
@@ -2456,6 +2548,7 @@ void updatevcoModSelSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO1");
+          startParameterDisplay();
         }
         midiCCOutLower(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, HIGH);
@@ -2468,6 +2561,7 @@ void updatevcoModSelSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO1 & VCO2");
+          startParameterDisplay();
         }
         midiCCOutLower(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, HIGH);
@@ -2480,6 +2574,7 @@ void updatevcoModSelSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "VCO2");
+          startParameterDisplay();
         }
         midiCCOutLower(CCvcoModSelSW, lowerData[P_vcoModSelSW]);
         mcp3.digitalWrite(VCO_MOD_DEST_LED_GRN, LOW);
@@ -2499,6 +2594,7 @@ void updatePWMModSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("PWM Mod Src", "ENV1");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCPWMModSW, upperData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, LOW);
@@ -2508,6 +2604,7 @@ void updatePWMModSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("PWM Mod Dest", "Manual");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCPWMModSW, upperData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, HIGH);
@@ -2517,6 +2614,7 @@ void updatePWMModSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("VCO Mod Dest", "LFO");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCPWMModSW, upperData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, HIGH);
@@ -2528,6 +2626,7 @@ void updatePWMModSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("PWM Mod Src", "ENV1");
+          startParameterDisplay();
         }
         midiCCOutLower(CCPWMModSW, lowerData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, LOW);
@@ -2540,6 +2639,7 @@ void updatePWMModSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("PWM Mod Src", "Manual");
+          startParameterDisplay();
         }
         midiCCOutLower(CCPWMModSW, lowerData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, HIGH);
@@ -2552,6 +2652,7 @@ void updatePWMModSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("PWM Mod Src", "LFO");
+          startParameterDisplay();
         }
         midiCCOutLower(CCPWMModSW, lowerData[P_PWMModSW]);
         mcp4.digitalWrite(VCO_PWM_SRC_LED_GRN, HIGH);
@@ -2571,6 +2672,7 @@ void updatevcaModSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "Off");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCvcaModSW, upperData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, LOW);
@@ -2580,6 +2682,7 @@ void updatevcaModSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "1");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCvcaModSW, upperData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, LOW);
@@ -2589,6 +2692,7 @@ void updatevcaModSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "2");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCvcaModSW, upperData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, HIGH);
@@ -2598,6 +2702,7 @@ void updatevcaModSW(boolean announce) {
       case 3:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "3");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCvcaModSW, upperData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, HIGH);
@@ -2609,6 +2714,7 @@ void updatevcaModSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "Off");
+          startParameterDisplay();
         }
         midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, LOW);
@@ -2621,6 +2727,7 @@ void updatevcaModSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "1");
+          startParameterDisplay();
         }
         midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, LOW);
@@ -2633,6 +2740,7 @@ void updatevcaModSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "2");
+          startParameterDisplay();
         }
         midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, HIGH);
@@ -2645,6 +2753,7 @@ void updatevcaModSW(boolean announce) {
       case 3:
         if (announce) {
           showCurrentParameterPage("VCA Mod Depth", "3");
+          startParameterDisplay();
         }
         midiCCOutLower(CCvcaModSW, lowerData[P_vcaModSW]);
         mcp7.digitalWrite(VCA_MOD_LED_GRN, HIGH);
@@ -2662,6 +2771,7 @@ void updateenv1InvertSW(boolean announce) {
     if (!upperData[P_env1InvertSW]) {
       if (announce) {
         showCurrentParameterPage("ENV1 Polarity", "Invert");
+        startParameterDisplay();
       }
       midiCCOut(CCenv1InvertSW, 0);
       midiCCOutUpper(CCenv1InvertSW, 0);
@@ -2670,6 +2780,7 @@ void updateenv1InvertSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("ENV1 Polarity", "Normal");
+        startParameterDisplay();
       }
       midiCCOut(CCenv1InvertSW, 1);
       midiCCOutUpper(CCenv1InvertSW, 1);
@@ -2680,6 +2791,7 @@ void updateenv1InvertSW(boolean announce) {
     if (!lowerData[P_env1InvertSW]) {
       if (announce) {
         showCurrentParameterPage("ENV1 Polarity", "Invert");
+        startParameterDisplay();
       }
       midiCCOut(CCenv1InvertSW, 0);
       midiCCOutLower(CCenv1InvertSW, 0);
@@ -2691,6 +2803,7 @@ void updateenv1InvertSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("ENV1 Polarity", "Normal");
+        startParameterDisplay();
       }
       midiCCOut(CCenv1InvertSW, 1);
       midiCCOutLower(CCenv1InvertSW, 1);
@@ -2710,6 +2823,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("Key Follow", "Off");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCenv2KeyFollowSW, upperData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, LOW);
@@ -2719,6 +2833,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV1");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCenv2KeyFollowSW, upperData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, LOW);
@@ -2728,6 +2843,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV2");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCenv2KeyFollowSW, upperData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, HIGH);
@@ -2737,6 +2853,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 3:
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV1 & 2");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCenv2KeyFollowSW, upperData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, HIGH);
@@ -2748,6 +2865,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("Key Follow", "Off");
+          startParameterDisplay();
         }
         midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, LOW);
@@ -2760,6 +2878,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV1");
+          startParameterDisplay();
         }
         midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, LOW);
@@ -2772,6 +2891,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV2");
+          startParameterDisplay();
         }
         midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, HIGH);
@@ -2784,6 +2904,7 @@ void updateenv2KeyFollowSW(boolean announce) {
       case 3:
         if (announce) {
           showCurrentParameterPage("Key Follow", "ENV1 & 2");
+          startParameterDisplay();
         }
         midiCCOutLower(CCenv2KeyFollowSW, lowerData[P_env2KeyFollowSW]);
         mcp8.digitalWrite(ENV_KEYFOLLOW_LED_GRN, HIGH);
@@ -2803,6 +2924,7 @@ void updatechorus(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("Chorus", "Off");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCchorus, upperData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, LOW);
@@ -2812,6 +2934,7 @@ void updatechorus(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("Chorus", "1");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCchorus, upperData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, LOW);
@@ -2821,6 +2944,7 @@ void updatechorus(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("Chorus", "2");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCchorus, upperData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, HIGH);
@@ -2830,6 +2954,7 @@ void updatechorus(boolean announce) {
       case 3:
         if (announce) {
           showCurrentParameterPage("Chorus", "1 & 2");
+          startParameterDisplay();
         }
         midiCCOutUpper(CCchorus, upperData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, HIGH);
@@ -2841,6 +2966,7 @@ void updatechorus(boolean announce) {
       case 0:
         if (announce) {
           showCurrentParameterPage("Chorus", "Off");
+          startParameterDisplay();
         }
         midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, LOW);
@@ -2853,6 +2979,7 @@ void updatechorus(boolean announce) {
       case 1:
         if (announce) {
           showCurrentParameterPage("Chorus", "1");
+          startParameterDisplay();
         }
         midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, LOW);
@@ -2865,6 +2992,7 @@ void updatechorus(boolean announce) {
       case 2:
         if (announce) {
           showCurrentParameterPage("Chorus", "2");
+          startParameterDisplay();
         }
         midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, HIGH);
@@ -2877,6 +3005,7 @@ void updatechorus(boolean announce) {
       case 3:
         if (announce) {
           showCurrentParameterPage("Chorus", "1 & 2");
+          startParameterDisplay();
         }
         midiCCOutLower(CCchorus, lowerData[P_chorus]);
         mcp8.digitalWrite(CHORUS_LED_GRN, HIGH);
@@ -2894,6 +3023,7 @@ void updatesyncSW(boolean announce) {
     if (!upperData[P_syncSW]) {
       if (announce) {
         showCurrentParameterPage("Sync", "Off");
+        startParameterDisplay();
       }
       midiCCOut(CCvco2Sync, 0);
       midiCCOutUpper(CCvco2Sync, 0);
@@ -2901,6 +3031,7 @@ void updatesyncSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("Sync", "On");
+        startParameterDisplay();
       }
       midiCCOut(CCvco2Sync, 1);
       midiCCOutUpper(CCvco2Sync, 1);
@@ -2910,6 +3041,7 @@ void updatesyncSW(boolean announce) {
     if (!lowerData[P_syncSW]) {
       if (announce) {
         showCurrentParameterPage("Sync", "Off");
+        startParameterDisplay();
       }
       midiCCOut(CCvco2Sync, 0);
       midiCCOutLower(CCvco2Sync, 0);
@@ -2920,6 +3052,7 @@ void updatesyncSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("Sync", "On");
+        startParameterDisplay();
       }
       midiCCOut(CCvco2Sync, 1);
       midiCCOutLower(CCvco2Sync, 1);
@@ -2936,6 +3069,7 @@ void updatevcoModSW(boolean announce) {
     if (!upperData[P_vcoModSW]) {
       if (announce) {
         showCurrentParameterPage("VCO ModWheel", "Off");
+        startParameterDisplay();
       }
       midiCCOut(CCvcoModSW, upperData[P_vcoModSW]);
 
@@ -2943,6 +3077,7 @@ void updatevcoModSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("VCO ModWheel", "On");
+        startParameterDisplay();
       }
       midiCCOut(CCvcoModSW, upperData[P_vcoModSW]);
 
@@ -2952,6 +3087,7 @@ void updatevcoModSW(boolean announce) {
     if (!lowerData[P_vcoModSW]) {
       if (announce) {
         showCurrentParameterPage("VCO ModWheel", "Off");
+        startParameterDisplay();
       }
       midiCCOut(CCvcoModSW, lowerData[P_vcoModSW]);
 
@@ -2962,6 +3098,7 @@ void updatevcoModSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("VCO ModWheel", "On");
+        startParameterDisplay();
       }
       midiCCOut(CCvcoModSW, lowerData[P_vcoModSW]);
 
@@ -2978,12 +3115,14 @@ void updatevcfModSW(boolean announce) {
     if (!upperData[P_vcfModSW]) {
       if (announce) {
         showCurrentParameterPage("VCF ModWheel", "Off");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfModSW, upperData[P_vcfModSW]);
       mcp1.digitalWrite(VCF_LFO_LED, LOW);
     } else {
       if (announce) {
         showCurrentParameterPage("VCF ModWheel", "On");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfModSW, upperData[P_vcfModSW]);
       mcp1.digitalWrite(VCF_LFO_LED, HIGH);
@@ -2992,6 +3131,7 @@ void updatevcfModSW(boolean announce) {
     if (!lowerData[P_vcfModSW]) {
       if (announce) {
         showCurrentParameterPage("VCF ModWheel", "Off");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfModSW, lowerData[P_vcfModSW]);
       mcp1.digitalWrite(VCF_LFO_LED, LOW);
@@ -3001,6 +3141,7 @@ void updatevcfModSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("VCF ModWheel", "On");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfModSW, lowerData[P_vcfModSW]);
       mcp1.digitalWrite(VCF_LFO_LED, HIGH);
@@ -3016,6 +3157,7 @@ void updatevcfSlopeSW(boolean announce) {
     if (!upperData[P_vcfSlopeSW]) {
       if (announce) {
         showCurrentParameterPage("VCF Slope", "24 dB");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfSlopeSW, 0);
       midiCCOutUpper(CCvcfSlopeSW, upperData[P_vcfSlopeSW]);
@@ -3024,6 +3166,7 @@ void updatevcfSlopeSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("VCF Slope", "12 dB");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfSlopeSW, 1);
       midiCCOutUpper(CCvcfSlopeSW, upperData[P_vcfSlopeSW]);
@@ -3034,6 +3177,7 @@ void updatevcfSlopeSW(boolean announce) {
     if (!lowerData[P_vcfSlopeSW]) {
       if (announce) {
         showCurrentParameterPage("VCF Slope", "24 dB");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfSlopeSW, 0);
       midiCCOutLower(CCvcfSlopeSW, lowerData[P_vcfSlopeSW]);
@@ -3045,6 +3189,7 @@ void updatevcfSlopeSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("VCF Slope", "12 dB");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfSlopeSW, 1);
       midiCCOutLower(CCvcfSlopeSW, lowerData[P_vcfSlopeSW]);
@@ -3062,6 +3207,7 @@ void updatevcfEgSelectSW(boolean announce) {
     if (!upperData[P_vcfEgSelectSW]) {
       if (announce) {
         showCurrentParameterPage("VCF Env Src", "ENV2");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfEgSelectSW, 0);
       midiCCOutUpper(CCvcfEgSelectSW, upperData[P_vcfEgSelectSW]);
@@ -3070,6 +3216,7 @@ void updatevcfEgSelectSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("VCF Env Src", "ENV1");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfEgSelectSW, 1);
       midiCCOutUpper(CCvcfEgSelectSW, upperData[P_vcfEgSelectSW]);
@@ -3080,6 +3227,7 @@ void updatevcfEgSelectSW(boolean announce) {
     if (!lowerData[P_vcfEgSelectSW]) {
       if (announce) {
         showCurrentParameterPage("VCF Env Src", "ENV2");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfEgSelectSW, 0);
       midiCCOutLower(CCvcfEgSelectSW, lowerData[P_vcfEgSelectSW]);
@@ -3091,6 +3239,7 @@ void updatevcfEgSelectSW(boolean announce) {
     } else {
       if (announce) {
         showCurrentParameterPage("VCF Env Src", "ENV1");
+        startParameterDisplay();
       }
       midiCCOut(CCvcfEgSelectSW, 1);
       midiCCOutLower(CCvcfEgSelectSW, lowerData[P_vcfEgSelectSW]);
@@ -3405,6 +3554,20 @@ void myControlChange(byte channel, byte control, int value) {
       updatebendRange(1);
       break;
 
+    case CCATDepth:
+      value = map(value, 0, 127, 0, 10);
+      if (upperSW) {
+        upperData[P_ATDepth] = value;
+      } else {
+        lowerData[P_ATDepth] = value;
+        if (wholemode) {
+          upperData[P_ATDepth] = value;
+        }
+      }
+      ATDepthstr = value;  // for display
+      updateATDepth(1);
+      break;
+
     case CCdelayTime:
       value = map(value, 0, 127, 0, 15);
       if (upperSW) {
@@ -3638,6 +3801,24 @@ void myControlChange(byte channel, byte control, int value) {
         }
       }
       updatevcoBendSW(1);
+      break;
+
+    case CCATDestSW:
+      if (upperSW) {
+        upperData[P_AfterTouchDest] = upperData[P_AfterTouchDest] + 1;
+        if (upperData[P_AfterTouchDest] > 2) {
+          upperData[P_AfterTouchDest] = 0;
+        }
+      } else {
+        lowerData[P_AfterTouchDest] = lowerData[P_AfterTouchDest] + 1;
+        if (lowerData[P_AfterTouchDest] > 2) {
+          lowerData[P_AfterTouchDest] = 0;
+        }
+        if (wholemode) {
+          upperData[P_AfterTouchDest] = lowerData[P_AfterTouchDest];
+        }
+      }
+      updateATDestSW(1);
       break;
 
     case CCvcoModSW:
@@ -3979,45 +4160,33 @@ void myProgramChange(byte channel, byte program) {
 
 void myAfterTouch(byte channel, byte value) {
 
-  afterTouch = value;
-  afterTouchU = (afterTouch * upperData[P_ATDepth]) / 127;
-  afterTouchL = (afterTouch * lowerData[P_ATDepth]) / 127;
+  uint8_t afterTouchU = (value * upperData[P_ATDepth] + 5) / 10;
+  uint8_t afterTouchL = (value * lowerData[P_ATDepth] + 5) / 10;
 
   switch (upperData[P_AfterTouchDest]) {
     case 1:
-      MIDI6.sendAfterTouch(value, 2);
+      if (!wholemode) {
+        midiCCOutUpper(CCmodwheel, afterTouchU);
+      }
       break;
     case 2:
-      upperData[P_filterCutoff] = (oldfilterCutoffU + afterTouchU);
-      if (afterTouchU < 10) {
-        upperData[P_filterCutoff] = oldfilterCutoffU;
+      if (!wholemode) {
+        midiCCOutUpper(CCvcfLfoDepth, afterTouchU);
       }
-      if (upperData[P_filterCutoff] > 127) {
-        upperData[P_filterCutoff] = 127;
-      }
-      break;
-    case 3:
-      upperData[P_vcfLfoDepth] = afterTouchU;
       break;
   }
   switch (lowerData[P_AfterTouchDest]) {
     case 1:
-      MIDI6.sendAfterTouch(value, 1);
+      midiCCOutLower(CCmodwheel, afterTouchL);
       if (wholemode) {
-        MIDI6.sendAfterTouch(value, 2);
+        midiCCOutUpper(CCmodwheel, afterTouchL);
       }
       break;
     case 2:
-      lowerData[P_filterCutoff] = (oldfilterCutoffL + afterTouchL);
-      if (afterTouchL < 10) {
-        lowerData[P_filterCutoff] = oldfilterCutoffL;
+      midiCCOutLower(CCvcfLfoDepth, afterTouchL);
+      if (wholemode) {
+        midiCCOutUpper(CCvcfLfoDepth, afterTouchL);
       }
-      if (lowerData[P_filterCutoff] > 127) {
-        lowerData[P_filterCutoff] = 127;
-      }
-      break;
-    case 3:
-      lowerData[P_vcfLfoDepth] = afterTouchL;
       break;
   }
 }
@@ -4170,10 +4339,11 @@ void lowerParamsToDisplay() {
 }
 
 void setAllButtons() {
-  // updatekeyboardMode(0);
+  updatekeyboardMode(0);
   updatevcaModSW(0);
   updateglideSW(0);
   updatevcoBendSW(0);
+  updateATDestSW(0);
   updatesyncSW(0);
   updatevcoModSW(0);
   updatevcfModSW(0);
@@ -4184,7 +4354,6 @@ void setAllButtons() {
   updateenv1InvertSW(0);
   updateenv2KeyFollowSW(0);
   updatechorus(0);
-  updatekeyboardMode(0);
 }
 
 String getCurrentPatchData() {
@@ -4231,25 +4400,6 @@ void midiCCOutUpper(byte cc, byte value) {
 
 void midiCCOutLower(byte cc, byte value) {
   MIDI6.sendControlChange(cc, value, 1);  //MIDI DIN to synth board lower
-}
-
-
-void outputDAC(int CHIP_SELECT, uint32_t sample_data1, uint32_t sample_data2, uint32_t sample_data3, uint32_t sample_data4) {
-  SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE1));
-  digitalWriteFast(CHIP_SELECT, LOW);
-  SPI.transfer32(sample_data1);
-  digitalWriteFast(CHIP_SELECT, HIGH);
-  digitalWriteFast(CHIP_SELECT, LOW);
-  SPI.transfer32(sample_data2);
-  digitalWriteFast(CHIP_SELECT, HIGH);
-  digitalWriteFast(CHIP_SELECT, LOW);
-  SPI.transfer32(sample_data3);
-  digitalWriteFast(CHIP_SELECT, HIGH);
-  digitalWriteFast(CHIP_SELECT, LOW);
-  SPI.transfer32(sample_data4);
-  digitalWriteFast(CHIP_SELECT, HIGH);
-  SPI.endTransaction();
-  delayMicroseconds(2);
 }
 
 void showSettingsPage() {
@@ -4348,6 +4498,7 @@ void checkSwitches() {
     } else if (state == PARAMETER || state == PATCH) {
       state = DELETE;
     }
+    updateScreen();
   } else if (saveButton.numClicks() == 1) {
     switch (state) {
       case SAVE:
@@ -4393,6 +4544,7 @@ void checkSwitches() {
           renamedPatch = "";
           state = PARAMETER;
         }
+        updateScreen();
         break;
 
 
@@ -4429,6 +4581,7 @@ void checkSwitches() {
           renamedPatch = "";
           state = PARAMETER;
         }
+        updateScreen();
         break;
 
 
@@ -4465,6 +4618,7 @@ void checkSwitches() {
             state = SAVE;
           }
         }
+        updateScreen();
         break;
 
       case PERFORMANCE_SAVE:
@@ -4475,6 +4629,7 @@ void checkSwitches() {
         currentCharacter = CHARACTERS[charIndex];
         startedRenaming = false;
         showRenamingPage(renamedPatch);
+        updateScreen();
         break;
 
       case PERFORMANCE_NAMING:
@@ -4530,6 +4685,7 @@ void checkSwitches() {
             performances.pop();
           }
         }
+        updateScreen();
         break;
     }
   }
@@ -4540,18 +4696,22 @@ void checkSwitches() {
     //Reinitialise all hardware values to force them to be re-read if different
     state = REINITIALISE;
     reinitialiseToPanel();
+    updateScreen();
   } else if (settingsButton.numClicks() == 1) {
     switch (state) {
       case PARAMETER:
         state = SETTINGS;
         showSettingsPage();
+        updateScreen();
         break;
       case SETTINGS:
         showSettingsPage();
+        updateScreen();
       case SETTINGSVALUE:
         settings::save_current_value();
         state = SETTINGS;
         showSettingsPage();
+        updateScreen();
         break;
     }
   }
@@ -4559,26 +4719,32 @@ void checkSwitches() {
   backButton.update();
   if (backButton.held()) {
     //If Back button held, Panic - all notes off
+    allNotesOff();
+    updateScreen();
   } else if (backButton.numClicks() == 1) {
     switch (state) {
       case RECALL:
         setPatchesOrdering(patchNo);
         state = PARAMETER;
+        updateScreen();
         break;
       case SAVE:
         renamedPatch = "";
         state = PARAMETER;
         loadPatches();  //Remove patch that was to be saved
         setPatchesOrdering(patchNo);
+        updateScreen();
         break;
       case PATCHNAMING:
         charIndex = 0;
         renamedPatch = "";
         state = SAVE;
+        updateScreen();
         break;
       case DELETE:
         setPatchesOrdering(patchNo);
         state = PARAMETER;
+        updateScreen();
         break;
       case SETTINGS:
         state = PARAMETER;
@@ -4586,6 +4752,7 @@ void checkSwitches() {
       case SETTINGSVALUE:
         state = SETTINGS;
         showSettingsPage();
+        updateScreen();
         break;
       case PERFORMANCE_NAMING:
         renamedPatch = "";
@@ -4595,10 +4762,12 @@ void checkSwitches() {
         if (performances.size() > 0 && performances.last().name == INITPATCHNAME) {
           performances.pop();
         }
+        updateScreen();
         break;
       case PERFORMANCE_DELETE:
         setPerformancesOrdering(currentPerformance.performanceNo);
         state = PARAMETER;
+        updateScreen();
         break;
     }
   }
@@ -4614,6 +4783,7 @@ void checkSwitches() {
       //Serial.println(inPerformanceMode ? "Performance Mode" : "Patch Mode");
 
       showCurrentParameterPage("Mode", inPerformanceMode ? "Performance" : "Patch");
+      startParameterDisplay();
 
       if (inPerformanceMode && performances.size() > 0) {
         // Entering Performance Mode
@@ -4636,16 +4806,19 @@ void checkSwitches() {
   } else {
     recallHeldToggleLatch = false;
   }
+
   if (recallButton.numClicks() == 1) {
     switch (state) {
       case RECALL:
         //Serial.println("[INFO] Ignored default RECALL to avoid overwriting performance recall.");
         state = PARAMETER;
+        updateScreen();
         break;
       case SAVE:
         showRenamingPage(patches.last().patchName);
         patchName = patches.last().patchName;
         state = PATCHNAMING;
+        updateScreen();
         break;
       case PATCHNAMING:
         if (renamedPatch.length() < 12)  //actually 12 chars
@@ -4655,6 +4828,7 @@ void checkSwitches() {
           currentCharacter = CHARACTERS[charIndex];
           showRenamingPage(renamedPatch);
         }
+        updateScreen();
         break;
       case DELETE:
         //Don't delete final patch
@@ -4670,15 +4844,18 @@ void checkSwitches() {
           recallPatch(patchNo);               //Load first patch
         }
         state = PARAMETER;
+        updateScreen();
         break;
       case SETTINGS:
         state = SETTINGSVALUE;
         showSettingsPage();
+        updateScreen();
         break;
       case SETTINGSVALUE:
         settings::save_current_value();
         state = SETTINGS;
         showSettingsPage();
+        updateScreen();
         break;
 
       case PARAMETER:
@@ -4694,6 +4871,7 @@ void checkSwitches() {
             getPatchName(currentPerformance.lowerPatchNo));
           state = PERFORMANCE_RECALL;
         }
+        updateScreen();
         break;
 
       case PERFORMANCE_RECALL:
@@ -4720,6 +4898,7 @@ void checkSwitches() {
 
         state = PARAMETER;
         patchNo = 0;  // ✅ Clear global patchNo to avoid accidental reuse
+        updateScreen();
         return;
 
       case PERFORMANCE_NAMING:
@@ -4729,6 +4908,7 @@ void checkSwitches() {
           currentCharacter = CHARACTERS[charIndex];
           showRenamingPage(renamedPatch);
         }
+        updateScreen();
         break;
 
       case PERFORMANCE_DELETE:
@@ -4746,6 +4926,7 @@ void checkSwitches() {
           recallPerformance(currentPerformance);
         }
         state = PARAMETER;
+        updateScreen();
         return;
 
 
@@ -4761,6 +4942,7 @@ void checkSwitches() {
         tft.updateScreen();
         delay(1000);
         state = PARAMETER;
+        updateScreen();
         break;
     }
   }
@@ -4782,6 +4964,7 @@ void checkEncoder() {
         } else {
           performances.unshift(performances.pop());
         }
+        updateScreen();
         break;
 
       case PERFORMANCE_SAVE:
@@ -4795,6 +4978,7 @@ void checkEncoder() {
           getPatchName(currentPerformance.upperPatchNo),
           currentPerformance.lowerPatchNo,
           getPatchName(currentPerformance.lowerPatchNo));
+          updateScreen();
         break;
 
       case PERFORMANCE_RECALL:
@@ -4808,6 +4992,7 @@ void checkEncoder() {
           getPatchName(currentPerformance.upperPatchNo),
           currentPerformance.lowerPatchNo,
           getPatchName(currentPerformance.lowerPatchNo));
+          updateScreen();
         break;
 
       case PERFORMANCE_NAMING:
@@ -4820,6 +5005,7 @@ void checkEncoder() {
         if (charIndex >= TOTALCHARS) charIndex = 0;
         currentCharacter = CHARACTERS[charIndex];
         showRenamingPage(renamedPatch + currentCharacter);
+        updateScreen();
         break;
 
       case PARAMETER:
@@ -4855,28 +5041,33 @@ void checkEncoder() {
           }
         }
         refreshPatchDisplayFromState();
+        updateScreen();
         break;
 
       case RECALL:
       case SAVE:
       case DELETE:
         patches.push(patches.shift());
+        updateScreen();
         break;
 
       case PATCHNAMING:
         if (charIndex == TOTALCHARS) charIndex = 0;
         currentCharacter = CHARACTERS[charIndex++];
         showRenamingPage(renamedPatch + currentCharacter);
+        updateScreen();
         break;
 
       case SETTINGS:
         settings::increment_setting();
         showSettingsPage();
+        updateScreen();
         break;
 
       case SETTINGSVALUE:
         settings::increment_setting_value();
         showSettingsPage();
+        updateScreen();
         break;
     }
   } else if ((encCW && encRead < encPrevious - 3) || (!encCW && encRead > encPrevious + 3)) {
@@ -4890,6 +5081,7 @@ void checkEncoder() {
         } else {
           performances.unshift(performances.pop());
         }
+        updateScreen();
         break;
 
       case PERFORMANCE_SAVE:
@@ -4903,6 +5095,7 @@ void checkEncoder() {
           getPatchName(currentPerformance.upperPatchNo),
           currentPerformance.lowerPatchNo,
           getPatchName(currentPerformance.lowerPatchNo));
+          updateScreen();
         break;
 
       case PERFORMANCE_RECALL:
@@ -4916,6 +5109,7 @@ void checkEncoder() {
           getPatchName(currentPerformance.upperPatchNo),
           currentPerformance.lowerPatchNo,
           getPatchName(currentPerformance.lowerPatchNo));
+          updateScreen();
         break;
 
       case PERFORMANCE_NAMING:
@@ -4928,6 +5122,7 @@ void checkEncoder() {
         if (charIndex < 0) charIndex = TOTALCHARS - 1;
         currentCharacter = CHARACTERS[charIndex];
         showRenamingPage(renamedPatch + currentCharacter);
+        updateScreen();
         break;
 
       case PARAMETER:
@@ -4963,6 +5158,7 @@ void checkEncoder() {
           }
         }
         refreshPatchDisplayFromState();
+        updateScreen();
         break;
 
 
@@ -4970,22 +5166,26 @@ void checkEncoder() {
       case SAVE:
       case DELETE:
         patches.unshift(patches.pop());
+        updateScreen();
         break;
 
       case PATCHNAMING:
         if (charIndex == -1) charIndex = TOTALCHARS - 1;
         currentCharacter = CHARACTERS[charIndex--];
         showRenamingPage(renamedPatch + currentCharacter);
+        updateScreen();
         break;
 
       case SETTINGS:
         settings::decrement_setting();
         showSettingsPage();
+        updateScreen();
         break;
 
       case SETTINGSVALUE:
         settings::decrement_setting_value();
         showSettingsPage();
+        updateScreen();
         break;
     }
   }
@@ -5015,7 +5215,7 @@ void checkMux() {
   digitalWriteFast(MUX_1, muxInput & B0010);
   digitalWriteFast(MUX_2, muxInput & B0100);
   digitalWriteFast(MUX_3, muxInput & B1000);
-  delayMicroseconds(5);
+  delayMicroseconds(2);
 
   mux1Read = adc->adc0->analogRead(MUX1_S);
   mux2Read = adc->adc0->analogRead(MUX2_S);
@@ -5029,8 +5229,8 @@ void checkMux() {
       case MUX1_VCO_BEND:
         myControlChange(midiChannel, CCbendRange, mux1Read);
         break;
-      case MUX1_VCF_BEND:
-        //myControlChange(midiChannel, CClfo1_rate, mux1Read);
+      case MUX1_AT_DEPTH:
+        myControlChange(midiChannel, CCATDepth, mux1Read);
         break;
       case MUX1_VCO_MOD:
         myControlChange(midiChannel, CCvcoLfoModDepth, mux1Read);
@@ -5179,4 +5379,9 @@ void loop() {
   MIDI6.read(midiChannel);
   MIDI7.read();
   usbMIDI.read(midiChannel);
+
+  if (waitingToUpdate && (millis() - lastDisplayTriggerTime >= displayTimeout)) {
+    updateScreen();  // retrigger
+    waitingToUpdate = false;
+  }
 }

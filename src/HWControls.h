@@ -14,7 +14,7 @@ ADC *adc = new ADC();
 
 //Mux 1 Connections
 #define MUX1_VCO_BEND 0
-#define MUX1_VCF_BEND 1
+#define MUX1_AT_DEPTH 1
 #define MUX1_VCO_MOD 2
 #define MUX1_VCF_MOD 3
 #define MUX1_GLIDE_TIME 4
@@ -73,7 +73,7 @@ ADC *adc = new ADC();
 #define PORTAMENTO_BUTTON 2
 #define VCF_MOD_BUTTON 3
 #define VCO_MOD_BUTTON 4
-#define VCF_BEND_BUTTON 5
+#define AT_DEST_BUTTON 5
 #define VCO_BEND_BUTTON 6
 #define ARP_MODE_UP_DOWN_BUTTON 7
 #define ARP_MODE_RANDOM_BUTTON 8
@@ -164,14 +164,14 @@ constexpr int numMCPs = (int)(sizeof(allMCPs) / sizeof(*allMCPs));
 constexpr int numEncoders = (int)(sizeof(rotaryEncoders) / sizeof(*rotaryEncoders));
 
 // an array of vectors to hold pointers to the encoders on each MCP
-std::vector<RotaryEncOverMCP *> encByMCP[NUM_MCP];
+//std::vector<RotaryEncOverMCP *> encByMCP[NUM_MCP];
 
 Button arp_range2_Button = Button(&mcp1, 0, ARP_RANGE2_BUTTON, &mainButtonChanged);
 Button arp_range1_Button = Button(&mcp1, 1, ARP_RANGE1_BUTTON, &mainButtonChanged);
 Button portamento_Button = Button(&mcp1, 2, PORTAMENTO_BUTTON, &mainButtonChanged);
 Button vcf_mod_Button = Button(&mcp1, 3, VCF_MOD_BUTTON, &mainButtonChanged);
 Button vco_mod_Button = Button(&mcp1, 4, VCO_MOD_BUTTON, &mainButtonChanged);
-Button vcf_bend_Button = Button(&mcp1, 5, VCF_BEND_BUTTON, &mainButtonChanged);
+Button at_dest_Button = Button(&mcp1, 5, AT_DEST_BUTTON, &mainButtonChanged);
 Button vco_bend_Button = Button(&mcp1, 6, VCO_BEND_BUTTON, &mainButtonChanged);
 
 Button arp_mode_up_down_Button = Button(&mcp2, 0, ARP_MODE_UP_DOWN_BUTTON, &mainButtonChanged);
@@ -232,7 +232,7 @@ Button *mainButtons[] = {
   &portamento_Button,
   &vcf_mod_Button,
   &vco_mod_Button,
-  &vcf_bend_Button,
+  &at_dest_Button,
   &vco_bend_Button,
   &arp_mode_up_down_Button,
   &arp_mode_random_Button,
@@ -287,7 +287,7 @@ Button *allButtons[] = {
   &portamento_Button,
   &vcf_mod_Button,
   &vco_mod_Button,
-  &vcf_bend_Button,
+  &at_dest_Button,
   &vco_bend_Button,
   &arp_mode_up_down_Button,
   &arp_mode_random_Button,
@@ -343,7 +343,7 @@ Button *allButtons[] = {
 #define GLIDE_SW 2
 #define VCF_MOD_SW 3
 #define VCO_MOD_SW 4
-#define VCF_BEND_SW 5
+#define AT_DEST_SW 5
 #define VCO_BEND_SW 6
 
 // GP2
@@ -413,10 +413,21 @@ Button *allButtons[] = {
 #define GLIDE_LED_RED 9
 #define VCF_LFO_LED 10
 #define VCO_LFO_LED 11
-#define VCF_BEND_LED 12
+#define AT_DEST_LED_RED 12
 #define VCO_BEND_LED_GRN 13
 #define VCO_BEND_LED_RED 14
 #define ARP_RANGE1_LED 15
+
+//GP2
+#define ARP_MODE_UP_DOWN_LED 1
+#define ARP_MODE_RAND_LED 3
+#define AT_DEST_LED_GRN 4
+#define ARP_CLK_LED_GRN 5
+#define ARP_CLK_LED_RED 7
+#define ARP_RANGE3_LED 9
+#define ARP_RANGE4_LED 11
+#define ARP_MODE_UP_LED 13
+#define ARP_MODE_DOWN_LED 15
 
 //GP3
 #define VCO2_SYNC_LED 4
@@ -488,21 +499,7 @@ const uint8_t VOICE_LED_PIN[8] = {
   PATCH8_BUTTON_LED
 };
 
-//Note DAC
-#define MULT1V 107
-#define MULT1_2V 123
-#define MULT2V 210
-#define MULT5V 260
-#define MULT33V 172
-#define MULT3V 344
-#define CLAMP2V 26500  // DAC value that corresponds to 2V
-
-#define DAC_CS1 10
-
 // System Switches etc
-
-#define TUNE_BUTTON 16
-#define TUNE_LED 17
 
 #define MUX1_S A0  // ADC0
 #define MUX2_S A1  // ADC0
@@ -571,9 +568,6 @@ void setupHardware() {
   digitalWrite(MUX_2, LOW);
   digitalWrite(MUX_3, LOW);
 
-  pinMode(DAC_CS1, OUTPUT);
-  digitalWrite(DAC_CS1, HIGH);
-
   //Mux ADC
   pinMode(MUX1_S, INPUT_DISABLE);
   pinMode(MUX2_S, INPUT_DISABLE);
@@ -601,6 +595,7 @@ void setupMCPOutputs() {
 
   mcp2.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
   mcp2.pinMode(3, OUTPUT);   // pin 3 = GPA3 of MCP2301X
+  mcp2.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
   mcp2.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
   mcp2.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
   mcp2.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X

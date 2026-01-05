@@ -3,6 +3,10 @@ byte midiChannel = 1;  //(EEPROM)
 int resolutionFrig = 1;
 static const byte OUT_CH = 1;   // choose your synth receive channel (1–16)
 
+unsigned long lastDisplayTriggerTime = 0;
+bool waitingToUpdate = false;
+const unsigned long displayTimeout = 2000;  // e.g. 5 seconds
+
 String patchNameU = INITPATCHNAME;
 String patchNameL = INITPATCHNAME;
 String patchName = INITPATCHNAME;
@@ -20,24 +24,6 @@ int noteVel;
 int lastPlayedNote = -1;  // Track the last note played
 int lastPlayedVoice = 0;  // Track the voice of the last note played
 int lastUsedVoice = 0;    // Global variable to store the last used voice
-
-// Chord hold
-bool chordHoldActive = false;
-bool chordHoldWaitingForNotes = false;
-uint8_t chordHoldCount = 0;
-uint8_t chordHoldRoot = 0;
-uint8_t chordHoldIntervals[MAX_CHORD_NOTES] = {0};
-unsigned long chordHoldStartTime = 0;
-bool chordHoldCaptureWindowActive = false;
-
-// adding encoders
-bool rotaryEncoderChanged(int id, bool clockwise, int speed);
-#define NUM_ENCODERS 42
-unsigned long lastTransition[NUM_ENCODERS + 1];
-boolean accelerate = true;
-int speed = 1;
-int value = 0;
-float lastSpeed[NUM_ENCODERS + 1] = { 0 }; // Or whatever your encoder count is
 
 int upperData[77];
 int lowerData[77];
@@ -116,22 +102,7 @@ int performanceIndex = 0;
 bool inPerformanceMode = false;
 static bool recallHeldToggleLatch = false;
 bool startedRenaming = false;
-bool isAutotuning = false;
 int scaled = 0;
-
-//Delayed LFO
-int numberOfNotes = 0;
-int oldnumberOfNotes = 0;
-int numberOfNotesU = 0;
-int oldnumberOfNotesU = 0;
-int numberOfNotesL = 0;
-int oldnumberOfNotesL = 0;
-unsigned long previousMillisL = 0;
-unsigned long intervalL = 1;  //10 seconds
-long delaytimeL = 0;
-unsigned long previousMillisU = 0;
-unsigned long intervalU = 1;  //10 seconds
-long delaytimeU = 0;
 
 boolean encCW = true;  //This is to set the encoder to increment when turned CW - Settings Option
 boolean announce = true;
@@ -193,18 +164,7 @@ int delayFeedbackstr = 0;
 int bendRangestr = 0;
 int vcoLfoModDepthstr = 0;
 int vcfLfoModDepthstr = 0;
-
-
-float afterTouch = 0;
-float afterTouchU = 0;
-float afterTouchL = 0;
-int AfterTouchDest = 0;
-int AfterTouchDestU = 0;
-int AfterTouchDestL = 0;
-
-// float modWheelDepthstr = 0;
-// int modWheelLevelstr = 0;
-// int PitchBendLevelstr = 0;  // for display
+int ATDepthstr = 0;
 
 boolean wholemode = true;
 boolean whole_button = true;
@@ -212,10 +172,6 @@ boolean dualmode = false;
 boolean dual_button = false;
 boolean splitmode = false;
 boolean split_button = false;
-
-int LFOWaveCV = 0;
-int LFOWaveCVupper = 0;
-int LFOWaveCVlower = 0;
 
 int returnvalue = 0;
 
