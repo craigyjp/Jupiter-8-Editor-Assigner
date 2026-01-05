@@ -18,7 +18,6 @@ The JP-08 modules have portamento, delay and chorus effects that are hidden from
 
 # Things to do
 
-* Add the mode buttons for solo, unison, poly1 and poly2
 * Implement the hold sections
 * Add the patch and bank buttons
 * Add the arpeggiator
