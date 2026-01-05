@@ -168,67 +168,7 @@ void setup() {
 
   initButtons();
 
-  mcp1.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
-  mcp1.pinMode(8, OUTPUT);   // pin 8 = GPB0 of MCP2301X
-  mcp1.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
-  mcp1.pinMode(10, OUTPUT);  // pin 10 = GPB2 of MCP2301X
-  mcp1.pinMode(11, OUTPUT);  // pin 11 = GPB3 of MCP2301X
-  mcp1.pinMode(12, OUTPUT);  // pin 12 = GPB4 of MCP2301X
-  mcp1.pinMode(13, OUTPUT);  // pin 13 = GPB5 of MCP2301X
-  mcp1.pinMode(14, OUTPUT);  // pin 14 = GPB6 of MCP2301X
-  mcp1.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
-
-  mcp2.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
-  mcp2.pinMode(3, OUTPUT);   // pin 3 = GPA3 of MCP2301X
-  mcp2.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
-  mcp2.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
-  mcp2.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
-  mcp2.pinMode(11, OUTPUT);  // pin 11 = GPB3 of MCP2301X
-  mcp2.pinMode(13, OUTPUT);  // pin 13 = GPB5 of MCP2301X
-  mcp2.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
-
-  mcp3.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
-  mcp3.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
-  mcp3.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
-  mcp3.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
-  mcp3.pinMode(12, OUTPUT);  // pin 12 = GPB4 of MCP2301X
-  mcp3.pinMode(13, OUTPUT);  // pin 13 = GPB5 of MCP2301X
-  mcp3.pinMode(14, OUTPUT);  // pin 14 = GPB6 of MCP2301X
-  mcp3.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
-
-  mcp4.pinMode(0, OUTPUT);   // pin 0 = GPA0 of MCP2301X
-  mcp4.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
-  mcp4.pinMode(2, OUTPUT);   // pin 2 = GPA2 of MCP2301X
-  mcp4.pinMode(3, OUTPUT);   // pin 3 = GPA3 of MCP2301X
-  mcp4.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
-  mcp4.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
-  mcp4.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
-  mcp4.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
-  mcp4.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
-
-  // mcp5.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
-  // mcp5.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
-
-  // mcp6.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
-  // mcp6.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
-  // mcp6.pinMode(14, OUTPUT);  // pin 14 = GPB6 of MCP2301X
-  // mcp6.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
-
-  mcp7.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
-  mcp7.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
-  mcp7.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
-  mcp7.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
-  mcp7.pinMode(8, OUTPUT);   // pin 8 = GPB0 of MCP2301X
-  mcp7.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
-  mcp7.pinMode(10, OUTPUT);  // pin 10 = GPB2 of MCP2301X
-  mcp7.pinMode(11, OUTPUT);  // pin 11 = GPB3 of MCP2301X
-  mcp7.pinMode(13, OUTPUT);  // pin 13 = GPB7 of MCP2301X
-
-  mcp8.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
-  mcp8.pinMode(2, OUTPUT);   // pin 2 = GPA2 of MCP2301X
-  mcp8.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
-  mcp8.pinMode(10, OUTPUT);  // pin 10 = GPB2 of MCP2301X
-
+  setupMCPOutputs();
   setupDisplay();
   setUpSettings();
   setupHardware();
@@ -335,16 +275,18 @@ void setup() {
   accelerate = getEncoderAccelerate();
 
   //setupDisplay();
-  delay(500);
+  delay(100);
 
   MIDI6.sendProgramChange(0, 1);
   MIDI7.sendProgramChange(0, 1);
+
+  delay(400);
 
   patchNoU = 1;
   patchNoL = 1;
   upperSW = false;
   lowerSW = true;
-  //updatekeyboardMode(0);
+  updatekeyboardMode(0);
   updateupperSW(0);
   updatelowerSW(0);
   updateplayMode(0);
@@ -423,6 +365,34 @@ void mainButtonChanged(Button *btn, bool released) {
         whole_button = true;
         wholemode = true;
         myControlChange(midiChannel, CCwhole_button, whole_button);
+      }
+      break;
+
+    case SOLO_BUTTON:
+      if (!released) {
+        keyboardMode = 2;
+        myControlChange(midiChannel, CCkeyboardMode, keyboardMode);
+      }
+      break;
+
+    case UNISON_BUTTON:
+      if (!released) {
+        keyboardMode = 3;
+        myControlChange(midiChannel, CCkeyboardMode, keyboardMode);
+      }
+      break;
+
+    case POLY1_BUTTON:
+      if (!released) {
+        keyboardMode = 0;
+        myControlChange(midiChannel, CCkeyboardMode, keyboardMode);
+      }
+      break;
+
+    case POLY2_BUTTON:
+      if (!released) {
+        keyboardMode = 1;
+        myControlChange(midiChannel, CCkeyboardMode, keyboardMode);
       }
       break;
 
@@ -856,9 +826,9 @@ void myNoteOn(byte channel, byte note, byte velocity) {
           voiceAssignmentLower[note] = lowerVoice;
           voiceToNoteLower[lowerVoice] = note;
         } else if (lowerData[P_keyboardModeSW] == 2) {
-          commandMonoNoteOnLower(note, velocity, 2);
+          commandMonoNoteOnLower(note, velocity);
         } else if (lowerData[P_keyboardModeSW] == 3) {
-          commandUnisonNoteOnLower(note, velocity, 2);
+          commandUnisonNoteOnLower(note, velocity);
         }
 
         // Upper Split
@@ -878,9 +848,9 @@ void myNoteOn(byte channel, byte note, byte velocity) {
           voiceAssignmentUpper[note] = upperVoice;
           voiceToNoteUpper[upperVoice - 4] = note;
         } else if (upperData[P_keyboardModeSW] == 2) {
-          commandMonoNoteOnUpper(note, velocity, 2);
+          commandMonoNoteOnUpper(note, velocity);
         } else if (upperData[P_keyboardModeSW] == 3) {
-          commandUnisonNoteOnUpper(note, velocity, 2);
+          commandUnisonNoteOnUpper(note, velocity);
         }
       }
       break;
@@ -902,10 +872,10 @@ void myNoteOn(byte channel, byte note, byte velocity) {
             voiceToNoteLower[voiceNum] = note;
             break;
           case 2:
-            commandMonoNoteOnLower(note, velocity, 2);
+            commandMonoNoteOnLower(note, velocity);
             break;
           case 3:
-            commandUnisonNoteOnLower(note, velocity, 2);
+            commandUnisonNoteOnLower(note, velocity);
             break;
         }
       } else {
@@ -923,10 +893,10 @@ void myNoteOn(byte channel, byte note, byte velocity) {
             voiceToNoteUpper[voiceNum - 4] = note;
             break;
           case 2:
-            commandMonoNoteOnUpper(note, velocity, 2);
+            commandMonoNoteOnUpper(note, velocity);
             break;
           case 3:
-            commandUnisonNoteOnUpper(note, velocity, 2);
+            commandUnisonNoteOnUpper(note, velocity);
             break;
         }
       }
@@ -1026,34 +996,13 @@ void commandMonoNoteOn(byte note, byte velocity) {
   noteVel = velocity;
   orderIndxWhole = (orderIndxWhole + 1) % 40;
   noteOrderWhole[orderIndxWhole] = note;
-
-  if (2 == 0) commandTopNoteWhole();
-  else if (2 == 1) commandBottomNoteWhole();
-  else commandLastNoteWhole();
+  commandLastNoteWhole();
 }
 
 void commandMonoNoteOff(byte note) {
   notesWhole[note] = false;
   noteMsg = note;
   commandLastNoteWhole();
-}
-
-void commandTopNoteWhole() {
-  int topNote = -1;
-  for (int i = 0; i < 128; i++)
-    if (notesWhole[i]) topNote = i;
-
-  if (topNote >= 0) assignVoice(topNote, noteVel, 0);
-  else releaseVoice(noteMsg, 0);
-}
-
-void commandBottomNoteWhole() {
-  int bottomNote = -1;
-  for (int i = 127; i >= 0; i--)
-    if (notesWhole[i]) bottomNote = i;
-
-  if (bottomNote >= 0) assignVoice(bottomNote, noteVel, 0);
-  else releaseVoice(noteMsg, 0);
 }
 
 void commandLastNoteWhole() {
@@ -1073,36 +1022,13 @@ void commandUnisonNoteOn(byte note, byte velocity) {
   noteVel = velocity;
   orderIndxWhole = (orderIndxWhole + 1) % 40;
   noteOrderWhole[orderIndxWhole] = note;
-
-  if (2 == 0) commandTopNoteUniWhole();
-  else if (2 == 1) commandBottomNoteUniWhole();
-  else commandLastNoteUniWhole();
+  commandLastNoteUniWhole();
 }
 
 void commandUnisonNoteOff(byte note) {
   notesWhole[note] = false;
   noteMsg = note;
   commandLastNoteUniWhole();
-}
-
-void commandTopNoteUniWhole() {
-  int topNote = -1;
-  for (int i = 0; i < 128; i++)
-    if (notesWhole[i]) topNote = i;
-  if (topNote >= 0)
-    for (int v = 0; v < 8; v++) assignVoice(topNote, noteVel, v);
-  else
-    for (int v = 0; v < 8; v++) releaseVoice(noteMsg, v);
-}
-
-void commandBottomNoteUniWhole() {
-  int bottomNote = -1;
-  for (int i = 127; i >= 0; i--)
-    if (notesWhole[i]) bottomNote = i;
-  if (bottomNote >= 0)
-    for (int v = 0; v < 8; v++) assignVoice(bottomNote, noteVel, v);
-  else
-    for (int v = 0; v < 8; v++) releaseVoice(noteMsg, v);
 }
 
 void commandLastNoteUniWhole() {
@@ -1117,15 +1043,13 @@ void commandLastNoteUniWhole() {
 }
 
 
-void commandMonoNoteOnUpper(byte note, byte velocity, byte priority) {
+void commandMonoNoteOnUpper(byte note, byte velocity) {
   notesUpper[note] = true;
   noteMsg = note;
   noteVel = velocity;
   orderIndxUpper = (orderIndxUpper + 1) % 40;
   noteOrderUpper[orderIndxUpper] = note;
-  if (priority == 0) commandTopNoteUpper();
-  else if (priority == 1) commandBottomNoteUpper();
-  else commandLastNoteUpper();
+  commandLastNoteUpper();
 }
 
 void commandMonoNoteOffUpper(byte note) {
@@ -1134,16 +1058,13 @@ void commandMonoNoteOffUpper(byte note) {
   commandLastNoteUpper();
 }
 
-void commandMonoNoteOnLower(byte note, byte velocity, byte priority) {
+void commandMonoNoteOnLower(byte note, byte velocity) {
   notesLower[note] = true;
   noteMsg = note;
   noteVel = velocity;
   orderIndxLower = (orderIndxLower + 1) % 40;
   noteOrderLower[orderIndxLower] = note;
-
-  if (priority == 0) commandTopNoteLower();
-  else if (priority == 1) commandBottomNoteLower();
-  else commandLastNoteLower();
+  commandLastNoteLower();
 }
 
 void commandMonoNoteOffLower(byte note) {
@@ -1152,13 +1073,11 @@ void commandMonoNoteOffLower(byte note) {
   commandLastNoteLower();
 }
 
-void commandUnisonNoteOnUpper(byte note, byte velocity, byte priority) {
+void commandUnisonNoteOnUpper(byte note, byte velocity) {
   notesUpper[note] = true;
   noteMsg = note;                                       // explicitly set here
   noteVel = velocity;                                   // explicitly set here
-  if (priority == 0) commandTopNoteUniUpper();          // Highest priority
-  else if (priority == 1) commandBottomNoteUniUpper();  // Lowest priority
-  else commandLastNoteUniUpper();                       // Last note priority
+  commandLastNoteUniUpper();                       // Last note priority
 }
 
 void commandUnisonNoteOffUpper(byte note) {
@@ -1167,13 +1086,11 @@ void commandUnisonNoteOffUpper(byte note) {
   commandLastNoteUniUpper();
 }
 
-void commandUnisonNoteOnLower(byte note, byte velocity, byte priority) {
+void commandUnisonNoteOnLower(byte note, byte velocity) {
   notesLower[note] = true;
   noteMsg = note;                                       // explicitly set here
   noteVel = velocity;                                   // explicitly set here
-  if (priority == 0) commandTopNoteUniLower();          // Highest priority
-  else if (priority == 1) commandBottomNoteUniLower();  // Lowest priority
-  else commandLastNoteUniLower();                       // Last note priority
+  commandLastNoteUniLower();                       // Last note priority
 }
 
 void commandUnisonNoteOffLower(byte note) {
@@ -1266,10 +1183,9 @@ inline void sendVoiceNoteOff(int voiceIdx, byte note) {
 void assignVoice(byte note, byte velocity, int voiceIdx) {
   if (voiceIdx < 0 || voiceIdx >= 8) return;
 
-  // If this voice is currently sounding a different note, turn it off first
-  // (critical for mono/unison priority changes, and for voice stealing)
+  // If voice is already sounding a different note, release it properly (state + LED + mappings)
   if (voices[voiceIdx].noteOn && voices[voiceIdx].note >= 0 && voices[voiceIdx].note != note) {
-    sendVoiceNoteOff(voiceIdx, (byte)voices[voiceIdx].note);
+    releaseVoice((byte)voices[voiceIdx].note, voiceIdx);
   }
 
   voices[voiceIdx].note = note;
@@ -1278,19 +1194,21 @@ void assignVoice(byte note, byte velocity, int voiceIdx) {
   voices[voiceIdx].noteOn = true;
   voiceOn[voiceIdx] = true;
 
+  setVoiceLed(voiceIdx, true);
   sendVoiceNoteOn(voiceIdx, note, velocity);
 }
 
 void releaseVoice(byte note, int voiceIdx) {
   if (voiceIdx < 0 || voiceIdx >= 8) return;
 
-  // Only release if this voice is actually holding that note
   if (voices[voiceIdx].noteOn && voices[voiceIdx].note == note) {
     sendVoiceNoteOff(voiceIdx, note);
 
     voices[voiceIdx].note = -1;
     voices[voiceIdx].noteOn = false;
     voiceOn[voiceIdx] = false;
+
+    setVoiceLed(voiceIdx, false);
 
     if (voiceIdx < 4) {
       voiceAssignmentLower[note] = -1;
@@ -1302,6 +1220,16 @@ void releaseVoice(byte note, int voiceIdx) {
   }
 }
 
+inline void setVoiceLed(int voiceIdx, bool on) {
+  if (voiceIdx < 0 || voiceIdx >= 8) return;
+  uint8_t pin = VOICE_LED_PIN[voiceIdx];
+
+  if (LED_ACTIVE_LOW) {
+    mcp5.digitalWrite(pin, on ? LOW : HIGH);
+  } else {
+    mcp5.digitalWrite(pin, on ? HIGH : LOW);
+  }
+}
 
 int getVoiceNoPoly2(int note) {
   voiceToReturn = -1;       // Initialize to 'null'
@@ -2274,67 +2202,100 @@ void updatelowerSW(boolean announce) {
   }
 }
 
-// void updatekeyboardMode(boolean announce) {
-//   if (upperSW) {
-//     if (dualmode) {
-//       lowerData[P_keyboardMode] = upperData[P_keyboardMode];
-//     }
-//     if (upperData[P_keyboardMode] == 0) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Poly 1");
-//       }
-//       midiCCOut72(CCkeyboardMode, 0);
-//       midiCCOut(CCkeyboardMode, 0);
-//     } else if (upperData[P_keyboardMode] == 1) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Poly 2");
-//       }
-//       midiCCOut72(CCkeyboardMode, 1);
-//       midiCCOut(CCkeyboardMode, 1);
-//     } else if (upperData[P_keyboardMode] == 2) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Mono");
-//       }
-//       midiCCOut72(CCkeyboardMode, 2);
-//       midiCCOut(CCkeyboardMode, 2);
-//     } else if (upperData[P_keyboardMode] == 3) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Unison");
-//       }
-//       midiCCOut72(CCkeyboardMode, 3);
-//       midiCCOut(CCkeyboardMode, 3);
-//     }
-//   } else {
-//     if (dualmode) {
-//       upperData[P_keyboardMode] = lowerData[P_keyboardMode];
-//     }
-//     if (lowerData[P_keyboardMode] == 0) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Poly 1");
-//       }
-//       midiCCOut72(CCkeyboardMode, 0);
-//       midiCCOut(CCkeyboardMode, 0);
-//     } else if (lowerData[P_keyboardMode] == 1) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Poly 2");
-//       }
-//       midiCCOut72(CCkeyboardMode, 1);
-//       midiCCOut(CCkeyboardMode, 1);
-//     } else if (lowerData[P_keyboardMode] == 2) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Mono");
-//       }
-//       midiCCOut72(CCkeyboardMode, 2);
-//       midiCCOut(CCkeyboardMode, 2);
-//     } else if (lowerData[P_keyboardMode] == 3) {
-//       if (announce) {
-//         showCurrentParameterPage("Keyboard Mode", "Unison");
-//       }
-//       midiCCOut72(CCkeyboardMode, 3);
-//       midiCCOut(CCkeyboardMode, 3);
-//     }
-//   }
-// }
+void updatekeyboardMode(boolean announce) {
+  if (upperSW) {
+    if (dualmode) {
+      lowerData[P_keyboardModeSW] = upperData[P_keyboardModeSW];
+    }
+    if (upperData[P_keyboardModeSW] == 0) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Poly 1");
+      }
+      mcp3.digitalWrite(POLY2_LED, LOW);
+      mcp3.digitalWrite(SOLO_LED, LOW);
+      mcp3.digitalWrite(UNISON_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, HIGH);
+      midiCCOutUpper(CCkeyboardMode, 0);
+      midiCCOut(CCkeyboardMode, 0);
+    } else if (upperData[P_keyboardModeSW] == 1) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Poly 2");
+      }
+      mcp3.digitalWrite(SOLO_LED, LOW);
+      mcp3.digitalWrite(UNISON_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, LOW);
+      mcp3.digitalWrite(POLY2_LED, HIGH);
+      midiCCOutUpper(CCkeyboardMode, 1);
+      midiCCOut(CCkeyboardMode, 1);
+    } else if (upperData[P_keyboardModeSW] == 2) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Mono");
+      }
+      mcp3.digitalWrite(UNISON_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, LOW);
+      mcp3.digitalWrite(POLY2_LED, LOW);
+      mcp3.digitalWrite(SOLO_LED, HIGH);
+      midiCCOutUpper(CCkeyboardMode, 2);
+      midiCCOut(CCkeyboardMode, 2);
+    } else if (upperData[P_keyboardModeSW] == 3) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Unison");
+      }
+      mcp3.digitalWrite(POLY2_LED, LOW);
+      mcp3.digitalWrite(SOLO_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, LOW);
+      mcp3.digitalWrite(UNISON_LED, HIGH);
+      midiCCOutUpper(CCkeyboardMode, 3);
+      midiCCOut(CCkeyboardMode, 3);
+    }
+  } else {
+    if (dualmode) {
+      upperData[P_keyboardModeSW] = lowerData[P_keyboardModeSW];
+    }
+    if (lowerData[P_keyboardModeSW] == 0) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Poly 1");
+      }
+      mcp3.digitalWrite(POLY2_LED, LOW);
+      mcp3.digitalWrite(SOLO_LED, LOW);
+      mcp3.digitalWrite(UNISON_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, HIGH);
+      midiCCOutLower(CCkeyboardMode, 0);
+      midiCCOut(CCkeyboardMode, 0);
+    } else if (lowerData[P_keyboardModeSW] == 1) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Poly 2");
+      }
+      mcp3.digitalWrite(SOLO_LED, LOW);
+      mcp3.digitalWrite(UNISON_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, LOW);
+      mcp3.digitalWrite(POLY2_LED, HIGH);
+      midiCCOutLower(CCkeyboardMode, 1);
+      midiCCOut(CCkeyboardMode, 1);
+    } else if (lowerData[P_keyboardModeSW] == 2) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Mono");
+      }
+      mcp3.digitalWrite(UNISON_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, LOW);
+      mcp3.digitalWrite(POLY2_LED, LOW);
+      mcp3.digitalWrite(SOLO_LED, HIGH);
+      midiCCOutUpper(CCkeyboardMode, 2);
+      midiCCOutLower(CCkeyboardMode, 2);
+      midiCCOut(CCkeyboardMode, 2);
+    } else if (lowerData[P_keyboardModeSW] == 3) {
+      if (announce) {
+        showCurrentParameterPage("Keyboard Mode", "Unison");
+      }
+      mcp3.digitalWrite(POLY2_LED, LOW);
+      mcp3.digitalWrite(SOLO_LED, LOW);
+      mcp3.digitalWrite(POLY1_LED, LOW);
+      mcp3.digitalWrite(UNISON_LED, HIGH);
+      midiCCOutLower(CCkeyboardMode, 3);
+      midiCCOut(CCkeyboardMode, 3);
+    }
+  }
+}
 
 void updateglideSW(boolean announce) {
 
@@ -3648,33 +3609,14 @@ void myControlChange(byte channel, byte control, int value) {
 
       //   //   ////////////////////////////////////////////////
 
-      // case CCplayMode:
-      //   updateplayMode(1);
-      //   break;
-
-      // case CCNotePriority:
-      //   if (upperData[P_keyboardMode] >= 2) {
-      //     if (upperSW) {
-      //       upperData[P_NotePriority] = value;
-      //     }
-      //     updateNotePriority(1);
-      //   }
-      //   if (lowerData[P_keyboardMode] >= 2) {
-      //     if (lowerSW) {
-      //       lowerData[P_NotePriority] = value;
-      //     }
-      //     updateNotePriority(1);
-      //   }
-      //   break;
-
-      // case CCkeyboardMode:
-      //   if (upperSW) {
-      //     upperData[P_keyboardMode] = panelData[P_keyboardMode];
-      //   } else {
-      //     lowerData[P_keyboardMode] = panelData[P_keyboardMode];
-      //   }
-      //   updatekeyboardMode(1);
-      //   break;
+    case CCkeyboardMode:
+      if (upperSW) {
+        upperData[P_keyboardModeSW] = keyboardMode;
+      } else {
+        lowerData[P_keyboardModeSW] = keyboardMode;
+      }
+      updatekeyboardMode(1);
+      break;
 
     case CCglideSW:
       updateglideSW(1);
@@ -3893,61 +3835,61 @@ void myControlChange(byte channel, byte control, int value) {
       value = map(value, 0, 127, 0, 5);
       if (upperSW) {
         if (upperData[P_vco2Waveform] < 3) {
-        switch (value) {
-          case 0:
-            upperData[P_vco2Range] = 0x00;
-            break;
+          switch (value) {
+            case 0:
+              upperData[P_vco2Range] = 0x00;
+              break;
 
-          case 1:
-            upperData[P_vco2Range] = 0x10;
-            break;
+            case 1:
+              upperData[P_vco2Range] = 0x10;
+              break;
 
-          case 2:
-            upperData[P_vco2Range] = 0x30;
-            break;
+            case 2:
+              upperData[P_vco2Range] = 0x30;
+              break;
 
-          case 3:
-            upperData[P_vco2Range] = 0x50;
-            break;
+            case 3:
+              upperData[P_vco2Range] = 0x50;
+              break;
 
-          case 4:
-            upperData[P_vco2Range] = 0x70;
-            break;
+            case 4:
+              upperData[P_vco2Range] = 0x70;
+              break;
 
-          case 5:
-            upperData[P_vco2Range] = 0x7F;
-            break;
-        }
+            case 5:
+              upperData[P_vco2Range] = 0x7F;
+              break;
+          }
         } else {
           upperData[P_vco2Range] = lowvco2RangeDisplay;
         }
       } else {
         if (lowerData[P_vco2Waveform] < 3) {
-        switch (value) {
-          case 0:
-            lowerData[P_vco2Range] = 0x00;
-            break;
+          switch (value) {
+            case 0:
+              lowerData[P_vco2Range] = 0x00;
+              break;
 
-          case 1:
-            lowerData[P_vco2Range] = 0x10;
-            break;
+            case 1:
+              lowerData[P_vco2Range] = 0x10;
+              break;
 
-          case 2:
-            lowerData[P_vco2Range] = 0x30;
-            break;
+            case 2:
+              lowerData[P_vco2Range] = 0x30;
+              break;
 
-          case 3:
-            lowerData[P_vco2Range] = 0x50;
-            break;
+            case 3:
+              lowerData[P_vco2Range] = 0x50;
+              break;
 
-          case 4:
-            lowerData[P_vco2Range] = 0x70;
-            break;
+            case 4:
+              lowerData[P_vco2Range] = 0x70;
+              break;
 
-          case 5:
-            lowerData[P_vco2Range] = 0x7F;
-            break;
-        }
+            case 5:
+              lowerData[P_vco2Range] = 0x7F;
+              break;
+          }
         } else {
           lowerData[P_vco2Range] = lowvco2RangeDisplay;
         }
@@ -4242,6 +4184,7 @@ void setAllButtons() {
   updateenv1InvertSW(0);
   updateenv2KeyFollowSW(0);
   updatechorus(0);
+  updatekeyboardMode(0);
 }
 
 String getCurrentPatchData() {

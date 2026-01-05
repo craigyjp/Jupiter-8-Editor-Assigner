@@ -208,22 +208,132 @@ Button manual_Button = Button(&mcp7, 12, MANUAL_BUTTON, &mainButtonChanged);
 Button env2_keyfollow_Button = Button(&mcp8, 0, ENV2_KEYFOLLOW_BUTTON, &mainButtonChanged);
 Button chorus_Button = Button(&mcp8, 8, CHORUS_BUTTON, &mainButtonChanged);
 
+Button patch1_Button = Button(&mcp5, 8, PATCH1_BUTTON, &mainButtonChanged);
+Button patch2_Button = Button(&mcp5, 9, PATCH2_BUTTON, &mainButtonChanged);
+Button patch3_Button = Button(&mcp5, 10, PATCH3_BUTTON, &mainButtonChanged);
+Button patch4_Button = Button(&mcp5, 11, PATCH4_BUTTON, &mainButtonChanged);
+Button patch5_Button = Button(&mcp5, 12, PATCH5_BUTTON, &mainButtonChanged);
+Button patch6_Button = Button(&mcp5, 13, PATCH6_BUTTON, &mainButtonChanged);
+Button patch7_Button = Button(&mcp5, 14, PATCH7_BUTTON, &mainButtonChanged);
+Button patch8_Button = Button(&mcp6, 8, PATCH8_BUTTON, &mainButtonChanged);
+
+Button preset1_Button = Button(&mcp6, 9, PRESET1_BUTTON, &mainButtonChanged);
+Button preset2_Button = Button(&mcp6, 10, PRESET2_BUTTON, &mainButtonChanged);
+Button preset3_Button = Button(&mcp6, 11, PRESET3_BUTTON, &mainButtonChanged);
+Button preset4_Button = Button(&mcp6, 12, PRESET4_BUTTON, &mainButtonChanged);
+Button preset5_Button = Button(&mcp6, 13, PRESET5_BUTTON, &mainButtonChanged);
+Button preset6_Button = Button(&mcp6, 14, PRESET6_BUTTON, &mainButtonChanged);
+Button preset7_Button = Button(&mcp6, 6, PRESET7_BUTTON, &mainButtonChanged);
+Button preset8_Button = Button(&mcp6, 5, PRESET8_BUTTON, &mainButtonChanged);
+
 Button *mainButtons[] = {
-  &arp_range2_Button, &arp_range1_Button, &portamento_Button, &vcf_mod_Button, &vco_mod_Button, &vcf_bend_Button, &vco_bend_Button,
-  &arp_mode_up_down_Button, &arp_mode_random_Button, &arp_clk_Button, &arp_range3_Button, &arp_range4_Button, &arp_mode_up_Button, &arp_mode_down_Button,
-  &vco2_sync_Button, &vco2_range_Button, &vco_pwm_src_Button, &vco_mod_dest_Button, &solo_Button, &unison_Button, &poly1_Button, &poly2_Button,
-  &lower_Button, &upper_Button, &dual_Button, &split_Button, &whole_Button, &panel_lower_Button, &panel_upper_Button,
-  &env1_invert_Button, &vca_mode_depth_Button, &vcf_env_src_Button, &vcf_slope_Button, &manual_Button,
-  &env2_keyfollow_Button, &chorus_Button,
+  &arp_range2_Button,
+  &arp_range1_Button,
+  &portamento_Button,
+  &vcf_mod_Button,
+  &vco_mod_Button,
+  &vcf_bend_Button,
+  &vco_bend_Button,
+  &arp_mode_up_down_Button,
+  &arp_mode_random_Button,
+  &arp_clk_Button,
+  &arp_range3_Button,
+  &arp_range4_Button,
+  &arp_mode_up_Button,
+  &arp_mode_down_Button,
+  &vco2_sync_Button,
+  &vco2_range_Button,
+  &vco_pwm_src_Button,
+  &vco_mod_dest_Button,
+  &solo_Button,
+  &unison_Button,
+  &poly1_Button,
+  &poly2_Button,
+  &lower_Button,
+  &upper_Button,
+  &dual_Button,
+  &split_Button,
+  &whole_Button,
+  &panel_lower_Button,
+  &panel_upper_Button,
+  &env1_invert_Button,
+  &vca_mode_depth_Button,
+  &vcf_env_src_Button,
+  &vcf_slope_Button,
+  &manual_Button,
+  &env2_keyfollow_Button,
+  &chorus_Button,
+  &patch1_Button,
+  &patch2_Button,
+  &patch3_Button,
+  &patch4_Button,
+  &patch5_Button,
+  &patch6_Button,
+  &patch7_Button,
+  &patch8_Button,
+  &preset1_Button,
+  &preset2_Button,
+  &preset3_Button,
+  &preset4_Button,
+  &preset5_Button,
+  &preset6_Button,
+  &preset7_Button,
+  &preset8_Button,
 };
 
 Button *allButtons[] = {
-  &arp_range2_Button, &arp_range1_Button, &portamento_Button, &vcf_mod_Button, &vco_mod_Button, &vcf_bend_Button, &vco_bend_Button,
-  &arp_mode_up_down_Button, &arp_mode_random_Button, &arp_clk_Button, &arp_range3_Button, &arp_range4_Button, &arp_mode_up_Button, &arp_mode_down_Button,
-  &vco2_sync_Button, &vco2_range_Button, &vco_pwm_src_Button, &vco_mod_dest_Button, &solo_Button, &unison_Button, &poly1_Button, &poly2_Button,
-  &lower_Button, &upper_Button, &dual_Button, &split_Button, &whole_Button, &panel_lower_Button, &panel_upper_Button,
-  &env1_invert_Button, &vca_mode_depth_Button, &vcf_env_src_Button, &vcf_slope_Button, &manual_Button,
-  &env2_keyfollow_Button, &chorus_Button,
+  &arp_range2_Button,
+  &arp_range1_Button,
+  &portamento_Button,
+  &vcf_mod_Button,
+  &vco_mod_Button,
+  &vcf_bend_Button,
+  &vco_bend_Button,
+  &arp_mode_up_down_Button,
+  &arp_mode_random_Button,
+  &arp_clk_Button,
+  &arp_range3_Button,
+  &arp_range4_Button,
+  &arp_mode_up_Button,
+  &arp_mode_down_Button,
+  &vco2_sync_Button,
+  &vco2_range_Button,
+  &vco_pwm_src_Button,
+  &vco_mod_dest_Button,
+  &solo_Button,
+  &unison_Button,
+  &poly1_Button,
+  &poly2_Button,
+  &lower_Button,
+  &upper_Button,
+  &dual_Button,
+  &split_Button,
+  &whole_Button,
+  &panel_lower_Button,
+  &panel_upper_Button,
+  &env1_invert_Button,
+  &vca_mode_depth_Button,
+  &vcf_env_src_Button,
+  &vcf_slope_Button,
+  &manual_Button,
+  &env2_keyfollow_Button,
+  &chorus_Button,
+  &patch1_Button,
+  &patch2_Button,
+  &patch3_Button,
+  &patch4_Button,
+  &patch5_Button,
+  &patch6_Button,
+  &patch7_Button,
+  &patch8_Button,
+  &preset1_Button,
+  &preset2_Button,
+  &preset3_Button,
+  &preset4_Button,
+  &preset5_Button,
+  &preset6_Button,
+  &preset7_Button,
+  &preset8_Button,
 };
 
 // Buttons
@@ -265,10 +375,24 @@ Button *allButtons[] = {
 #define PM_UPPER_SW 14
 
 // GP5
-
+#define PATCH1_SW 8
+#define PATCH2_SW 9
+#define PATCH3_SW 10
+#define PATCH4_SW 11
+#define PATCH5_SW 12
+#define PATCH6_SW 13
+#define PATCH7_SW 14
 
 // GP6
-
+#define PRESET8_SW 5
+#define PRESET7_SW 6
+#define PATCH1_SW  8
+#define PRESET1_SW 9
+#define PRESET2_SW 10
+#define PRESET3_SW 11
+#define PRESET4_SW 12
+#define PRESET5_SW 13
+#define PRESET6_SW 14
 
 // GP7
 #define ENV1_INVERT_SW 0
@@ -304,7 +428,7 @@ Button *allButtons[] = {
 #define POLY1_LED 14
 #define POLY2_LED 15
 
-//GP4
+// GP4
 #define PM_LOWER_LED 0
 #define LOWER_LED 1
 #define UPPER_LED 2
@@ -314,6 +438,27 @@ Button *allButtons[] = {
 #define VCO_PWM_SRC_LED_GRN 6
 #define VCO_PWM_SRC_LED_RED 7
 #define PM_UPPER_LED 15
+
+// GP5
+
+#define PATCH1_BUTTON_LED 0
+#define PATCH2_BUTTON_LED 1
+#define PATCH3_BUTTON_LED 2
+#define PATCH4_BUTTON_LED 3
+#define PATCH5_BUTTON_LED 4
+#define PATCH6_BUTTON_LED 5
+#define PATCH7_BUTTON_LED 6
+#define PATCH8_BUTTON_LED 7
+#define PRESET1_BUTTON_LED 15
+
+// GP6
+#define PRESET7_BUTTON_LED 0
+#define PRESET6_BUTTON_LED 1
+#define PRESET5_BUTTON_LED 2
+#define PRESET4_BUTTON_LED 3
+#define PRESET3_BUTTON_LED 4
+#define PRESET2_BUTTON_LED 7
+#define PRESET8_BUTTON_LED 15
 
 //GP7
 #define ENV1_INVERT_LED_GRN 4
@@ -326,11 +471,22 @@ Button *allButtons[] = {
 #define VCF_SLOPE_LED_RED 11
 #define MANUAL_LED 13
 
-//GP8
+// GP8
 #define ENV_KEYFOLLOW_LED_RED 1
 #define ENV_KEYFOLLOW_LED_GRN 2
 #define CHORUS_LED_GRN 9
 #define CHORUS_LED_RED 10
+
+const uint8_t VOICE_LED_PIN[8] = {
+  PATCH1_BUTTON_LED,
+  PATCH2_BUTTON_LED,
+  PATCH3_BUTTON_LED,
+  PATCH4_BUTTON_LED,
+  PATCH5_BUTTON_LED,
+  PATCH6_BUTTON_LED,
+  PATCH7_BUTTON_LED,
+  PATCH8_BUTTON_LED
+};
 
 //Note DAC
 #define MULT1V 107
@@ -429,4 +585,78 @@ void setupHardware() {
   pinMode(SAVE_SW, INPUT_PULLUP);
   pinMode(SETTINGS_SW, INPUT_PULLUP);
   pinMode(BACK_SW, INPUT_PULLUP);
+}
+
+void setupMCPOutputs() {
+
+  mcp1.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
+  mcp1.pinMode(8, OUTPUT);   // pin 8 = GPB0 of MCP2301X
+  mcp1.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
+  mcp1.pinMode(10, OUTPUT);  // pin 10 = GPB2 of MCP2301X
+  mcp1.pinMode(11, OUTPUT);  // pin 11 = GPB3 of MCP2301X
+  mcp1.pinMode(12, OUTPUT);  // pin 12 = GPB4 of MCP2301X
+  mcp1.pinMode(13, OUTPUT);  // pin 13 = GPB5 of MCP2301X
+  mcp1.pinMode(14, OUTPUT);  // pin 14 = GPB6 of MCP2301X
+  mcp1.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
+
+  mcp2.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
+  mcp2.pinMode(3, OUTPUT);   // pin 3 = GPA3 of MCP2301X
+  mcp2.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
+  mcp2.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
+  mcp2.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
+  mcp2.pinMode(11, OUTPUT);  // pin 11 = GPB3 of MCP2301X
+  mcp2.pinMode(13, OUTPUT);  // pin 13 = GPB5 of MCP2301X
+  mcp2.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
+
+  mcp3.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
+  mcp3.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
+  mcp3.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
+  mcp3.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
+  mcp3.pinMode(12, OUTPUT);  // pin 12 = GPB4 of MCP2301X
+  mcp3.pinMode(13, OUTPUT);  // pin 13 = GPB5 of MCP2301X
+  mcp3.pinMode(14, OUTPUT);  // pin 14 = GPB6 of MCP2301X
+  mcp3.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
+
+  mcp4.pinMode(0, OUTPUT);   // pin 0 = GPA0 of MCP2301X
+  mcp4.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
+  mcp4.pinMode(2, OUTPUT);   // pin 2 = GPA2 of MCP2301X
+  mcp4.pinMode(3, OUTPUT);   // pin 3 = GPA3 of MCP2301X
+  mcp4.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
+  mcp4.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
+  mcp4.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
+  mcp4.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
+  mcp4.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
+
+  mcp5.pinMode(0, OUTPUT);   // pin 0 = GPA0 of MCP2301X
+  mcp5.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
+  mcp5.pinMode(2, OUTPUT);   // pin 2 = GPA2 of MCP2301X
+  mcp5.pinMode(3, OUTPUT);   // pin 3 = GPA3 of MCP2301X
+  mcp5.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
+  mcp5.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
+  mcp5.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
+  mcp5.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
+  mcp5.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
+
+  mcp6.pinMode(0, OUTPUT);   // pin 0 = GPA0 of MCP2301X
+  mcp6.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
+  mcp6.pinMode(2, OUTPUT);   // pin 2 = GPA2 of MCP2301X
+  mcp6.pinMode(3, OUTPUT);   // pin 3 = GPA3 of MCP2301X
+  mcp6.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
+  mcp6.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
+  mcp6.pinMode(15, OUTPUT);  // pin 15 = GPB7 of MCP2301X
+
+  mcp7.pinMode(4, OUTPUT);   // pin 4 = GPA4 of MCP2301X
+  mcp7.pinMode(5, OUTPUT);   // pin 5 = GPA5 of MCP2301X
+  mcp7.pinMode(6, OUTPUT);   // pin 6 = GPA6 of MCP2301X
+  mcp7.pinMode(7, OUTPUT);   // pin 7 = GPA7 of MCP2301X
+  mcp7.pinMode(8, OUTPUT);   // pin 8 = GPB0 of MCP2301X
+  mcp7.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
+  mcp7.pinMode(10, OUTPUT);  // pin 10 = GPB2 of MCP2301X
+  mcp7.pinMode(11, OUTPUT);  // pin 11 = GPB3 of MCP2301X
+  mcp7.pinMode(13, OUTPUT);  // pin 13 = GPB7 of MCP2301X
+
+  mcp8.pinMode(1, OUTPUT);   // pin 1 = GPA1 of MCP2301X
+  mcp8.pinMode(2, OUTPUT);   // pin 2 = GPA2 of MCP2301X
+  mcp8.pinMode(9, OUTPUT);   // pin 9 = GPB1 of MCP2301X
+  mcp8.pinMode(10, OUTPUT);  // pin 10 = GPB2 of MCP2301X
 }

@@ -81,6 +81,7 @@
 #define   CCsplit_button  103
 #define   CCvcoLfoModDepth  104
 #define   CCvcfLfoModDepth  105
+#define   CCkeyboardMode  106
 
 #define   CCallnotesoff   123//Panic button
 

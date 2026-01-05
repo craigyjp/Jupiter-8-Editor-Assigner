@@ -107,6 +107,7 @@ int panelData[77];
 
 
 int playMode = 0;
+int keyboardMode = 0;
 int glideSW = 0;
 int vcoBendSW = 0;
 int lowerSplitVoicePointer = 0;
@@ -217,3 +218,5 @@ int LFOWaveCVupper = 0;
 int LFOWaveCVlower = 0;
 
 int returnvalue = 0;
+
+static const bool LED_ACTIVE_LOW = false;  // set true if LOW turns LED on
