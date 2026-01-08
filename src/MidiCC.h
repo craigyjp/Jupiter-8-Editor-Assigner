@@ -69,6 +69,7 @@
 #define   CCvcoBendSW     88
 #define   CCATDepth       89
 #define   CCATDestSW      90
+#define   CCmanualSW      92
 #define   CCvcoModSW      94
 #define   CCvcfModSW      95
 #define   CCvco2RangeSW   96

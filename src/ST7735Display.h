@@ -1,11 +1,3 @@
-// This Teensy3 native optimized version requires specific pins
-
-#define cs 38
-#define dc 3
-#define rst 9
-
-#define DISPLAYTIMEOUT 1500
-
 #include <Adafruit_GFX.h>
 #include <ST7735_t3.h>  // Hardware-specific library
 #include <ST7789_t3.h>  // Hardware-specific library
@@ -17,6 +9,12 @@
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansOblique24pt7b.h>
 #include <Fonts/FreeSansBoldOblique24pt7b.h>
+
+#define cs 38
+#define dc 3
+#define rst 9
+
+#define DISPLAYTIMEOUT 1500
 
 #define PULSE 1
 #define VAR_TRI 2
@@ -304,186 +302,6 @@ void renderPerformanceDeletePage() {
   performances.size() > 1 ? tft.println(performances[1].name) : tft.println(performances.last().name);
 }
 
-// void renderCurrentPatchPage() {
-
-//   tft.fillScreen(ST7735_BLACK);
-//   tft.drawFastHLine(0, 40, tft.width(), ST7735_RED);
-//   tft.drawFastHLine(0, 140, tft.width(), ST7735_RED);
-
-//   tft.setTextColor(ST7735_YELLOW);
-//   tft.setFont(&FreeSans12pt7b);
-//   tft.setTextSize(1);
-//   tft.setCursor(5, 10);
-//   tft.println("Number");
-//   tft.setCursor(100, 10);
-//   tft.println(inPerformanceMode ? "Performance" : "Patchname");
-//   switch (playMode) {
-//     case 0:
-//       tft.setCursor(240, 10);
-//       tft.println("Whole");
-//       break;
-
-//     case 1:
-//       tft.setCursor(240, 10);
-//       tft.println("Dual");
-//       break;
-
-//     case 2:
-//       tft.setCursor(240, 10);
-//       tft.println("Split");
-//       break;
-//   }
-//   if (wholemode) {
-
-//     tft.setFont(&FreeSans12pt7b);
-//     tft.setCursor(0, 70);
-//     tft.setTextSize(3);
-//     tft.setTextColor(ST7735_YELLOW);
-//     tft.println(currentPgmNumL);
-
-//     tft.setCursor(100, 75);
-//     tft.setFont(&FreeSans9pt7b);
-//     tft.setTextSize(2);
-//     tft.setTextColor(ST7735_WHITE);
-//     tft.println(currentPatchNameL);
-
-//   } else {
-
-//     tft.setFont(&FreeSans12pt7b);
-//     tft.setCursor(0, 70);
-//     tft.setTextSize(3);
-//     tft.setTextColor(ST7735_YELLOW);
-//     tft.println(currentPgmNumU);
-
-//     tft.setCursor(100, 75);
-//     tft.setFont(&FreeSans9pt7b);
-//     tft.setTextSize(2);
-//     tft.setTextColor(ST7735_WHITE);
-//     tft.println(currentPatchNameU);
-
-//     tft.setFont(&FreeSans12pt7b);
-//     tft.setCursor(0, 170);
-//     tft.setTextSize(3);
-//     tft.setTextColor(ST7735_YELLOW);
-//     tft.println(currentPgmNumL);
-
-//     tft.setCursor(100, 175);
-//     tft.setFont(&FreeSans9pt7b);
-//     tft.setTextSize(2);
-//     tft.setTextColor(ST7735_WHITE);
-//     tft.println(currentPatchNameL);
-//   }
-// }
-
-// void renderCurrentParameterPage() {
-
-//   tft.fillScreen(ST7735_BLACK);
-//   tft.drawFastHLine(0, 40, tft.width(), ST7735_RED);
-//   tft.drawFastHLine(0, 140, tft.width(), ST7735_RED);
-
-//   tft.setTextColor(ST7735_YELLOW);
-//   tft.setFont(&FreeSans12pt7b);
-//   tft.setTextSize(1);
-//   tft.setCursor(5, 10);
-//   tft.println("Number");
-//   tft.setCursor(100, 10);
-//   tft.println(inPerformanceMode ? "Performance" : "Patchname");
-//   switch (playMode) {
-//     case 0:
-//       tft.setCursor(240, 10);
-//       tft.println("Whole");
-//       break;
-
-//     case 1:
-//       tft.setCursor(240, 10);
-//       tft.println("Dual");
-//       break;
-
-//     case 2:
-//       tft.setCursor(240, 10);
-//       tft.println("Split");
-//       break;
-//   }
-
-//   switch (state) {
-//     case PARAMETER:
-//       if (upperSW) {
-//         tft.setFont(&FreeSans12pt7b);
-//         tft.setCursor(0, 70);
-//         tft.setTextSize(3);
-//         tft.setTextColor(ST7735_YELLOW);
-//         tft.println(currentPgmNumU);
-
-//         tft.setCursor(100, 75);
-//         tft.setFont(&FreeSans9pt7b);
-//         tft.setTextSize(2);
-//         tft.setTextColor(ST7735_WHITE);
-//         tft.println(currentPatchNameU);
-
-//         // parameter in lower section
-//         tft.setCursor(0, 165);
-//         tft.setTextColor(ST7735_YELLOW);
-//         tft.setTextSize(2);
-//         tft.println(currentParameter);
-
-//         tft.setCursor(0, 205);
-//         tft.setTextColor(ST7735_WHITE);
-//         tft.println(currentValue);
-
-//       } else {
-//         if (wholemode) {
-//           //upper whole mode patch
-//           tft.setFont(&FreeSans12pt7b);
-//           tft.setCursor(0, 70);
-//           tft.setTextSize(3);
-//           tft.setTextColor(ST7735_YELLOW);
-//           tft.println(currentPgmNumL);
-
-//           tft.setCursor(100, 75);
-//           tft.setFont(&FreeSans9pt7b);
-//           tft.setTextSize(2);
-//           tft.setTextColor(ST7735_WHITE);
-//           tft.println(currentPatchNameL);
-
-//           // parameter in lower section
-//           tft.setCursor(0, 165);
-//           tft.setTextColor(ST7735_YELLOW);
-//           tft.setTextSize(2);
-//           tft.println(currentParameter);
-
-//           tft.setCursor(0, 205);
-//           tft.setTextColor(ST7735_WHITE);
-//           tft.println(currentValue);
-
-//         } else {
-
-//           // lower patch
-//           tft.setFont(&FreeSans12pt7b);
-//           tft.setCursor(0, 170);
-//           tft.setTextSize(3);
-//           tft.setTextColor(ST7735_YELLOW);
-//           tft.println(currentPgmNumL);
-
-//           tft.setCursor(100, 175);
-//           tft.setFont(&FreeSans9pt7b);
-//           tft.setTextSize(2);
-//           tft.setTextColor(ST7735_WHITE);
-//           tft.println(currentPatchNameL);
-
-//           tft.setCursor(0, 65);
-//           tft.setTextColor(ST7735_YELLOW);
-//           tft.setTextSize(2);
-//           tft.println(currentParameter);
-
-//           tft.setCursor(0, 105);
-//           tft.setTextColor(ST7735_WHITE);
-//           tft.println(currentValue);
-//         }
-//       }
-//       break;
-//   }
-// }
-
 void renderDeletePatchPage() {
   tft.fillScreen(ST7735_BLACK);
   tft.setFont(&FreeSansBold18pt7b);
@@ -753,5 +571,4 @@ void setupDisplay() {
   tft.fillScreen(ST7735_BLACK);
   renderBootUpPage();
   tft.updateScreen();
-  //threads.addThread(displayThread);
 }

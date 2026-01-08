@@ -1,11 +1,51 @@
-//Values below are just for initialising and will be changed when synth is initialised to current panel controls & EEPROM settings
 byte midiChannel = 1;  //(EEPROM)
 int resolutionFrig = 1;
 static const byte OUT_CH = 1;   // choose your synth receive channel (1–16)
+bool cardStatus = false;
 
 unsigned long lastDisplayTriggerTime = 0;
 bool waitingToUpdate = false;
 const unsigned long displayTimeout = 2000;  // e.g. 5 seconds
+
+// JP8 style patch handling
+bool jp8Mode = true;
+
+#define JP8_SELECT_ROW 0
+#define JP8_SELECT_COL 1
+uint8_t jp8DigitState = JP8_SELECT_ROW;
+
+uint8_t jp8Row = 1;         // 1..8
+uint8_t jp8Col = 1;         // 1..8
+
+uint8_t upperSlotRC = 11;   // 11..88
+uint8_t lowerSlotRC = 11;   // 11..88
+
+elapsedMillis jp8DigitTimer;
+const uint16_t JP8_DIGIT_TIMEOUT_MS = 2000;
+
+elapsedMillis jp8BlinkTimer;
+const uint16_t JP8_BLINK_MS = 200;
+
+constexpr uint8_t LED_ON  = HIGH;
+constexpr uint8_t LED_OFF = LOW;
+
+int lastPatchRC_U = 11; 
+int lastPatchRC_L = 11;
+
+bool manualSyncPending = false;
+uint8_t manualSyncLayer = 0;
+uint16_t manualSyncStep = 0;
+
+elapsedMillis manualSyncTimer;
+const uint16_t MANUAL_SYNC_PERIOD_MS = 2;
+
+bool manualSyncInProgress = false;
+bool suppressParamAnnounce = false;
+bool bootInitInProgress = true;
+// Other stuff
+
+bool showMuxRead = true;
+bool manualMode = false;
 
 String patchNameU = INITPATCHNAME;
 String patchNameL = INITPATCHNAME;
@@ -104,8 +144,8 @@ static bool recallHeldToggleLatch = false;
 bool startedRenaming = false;
 int scaled = 0;
 
-boolean encCW = true;  //This is to set the encoder to increment when turned CW - Settings Option
-boolean announce = true;
+bool encCW = true;  //This is to set the encoder to increment when turned CW - Settings Option
+bool announce = true;
 // polykit parameters in order of mux
 
 String StratuslfoWaveform = "                ";
@@ -114,9 +154,9 @@ int oldfilterCutoff = 0;
 int oldfilterCutoffU = 0;
 int oldfilterCutoffL = 0;
 
-boolean upperSW = false;
+bool upperSW = false;
 int oldupperSW = 0;
-boolean lowerSW = true;
+bool lowerSW = true;
 int oldlowerSW = 0;
 
 int resonancestr = 0;
@@ -166,12 +206,12 @@ int vcoLfoModDepthstr = 0;
 int vcfLfoModDepthstr = 0;
 int ATDepthstr = 0;
 
-boolean wholemode = true;
-boolean whole_button = true;
-boolean dualmode = false;
-boolean dual_button = false;
-boolean splitmode = false;
-boolean split_button = false;
+bool wholemode = true;
+bool whole_button = true;
+bool dualmode = false;
+bool dual_button = false;
+bool splitmode = false;
+bool split_button = false;
 
 int returnvalue = 0;
 
