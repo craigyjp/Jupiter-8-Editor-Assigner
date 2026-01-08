@@ -257,6 +257,7 @@ void setup() {
 
   ensureJP8BankInitialized();
 
+  updateArpLEDs();
   patchNoU = 11;
   patchNoL = 11;
   upperSW = false;
@@ -297,6 +298,605 @@ void startParameterDisplay() {
 
 // Arpeggiator
 
+inline bool arpNotePresentLower(uint8_t n) {
+  return keyDownLower[n] || holdLatchedLower[n];
+}
+
+inline bool arpNotePresentUpper(uint8_t n) {
+  return keyDownUpper[n] || holdLatchedUpper[n];
+}
+
+inline bool arpPatternContains(uint8_t n) {
+  for (uint8_t i = 0; i < arpLen; i++)
+    if (arpPattern[i] == n) return true;
+  return false;
+}
+
+void arpClearPattern() {
+  arpLen = 0;
+  arpPos = -1;
+  arpDir = +1;
+  arpRunning = false;
+}
+
+void arpAddNote(uint8_t n) {
+  if (arpLen >= 8) return;
+  if (arpPatternContains(n)) return;
+  arpPattern[arpLen++] = n;
+  // If we were empty and now have notes, start transport cleanly
+  if (arpLen == 1) {
+    arpPos = -1;
+    arpDir = +1;
+  }
+}
+
+void arpRemoveNote(uint8_t n) {
+  for (uint8_t i = 0; i < arpLen; i++) {
+    if (arpPattern[i] == n) {
+      for (uint8_t j = i; j + 1 < arpLen; j++) arpPattern[j] = arpPattern[j + 1];
+      arpLen--;
+      if (arpLen == 0) {
+        arpPos = -1;
+        arpDir = +1;
+      } else {
+        // keep position in bounds
+        int16_t L = (int16_t)arpLen * (int16_t)arpRange;
+        if (arpPos >= L) arpPos = -1;
+      }
+      return;
+    }
+  }
+}
+
+inline int16_t arpUnfoldedLength() {
+  return (int16_t)arpLen * (int16_t)arpRange;
+}
+
+inline uint8_t arpUnfoldedNoteAt(int16_t p) {
+  uint8_t idx = (uint8_t)(p % arpLen);
+  uint8_t oct = (uint8_t)(p / arpLen);
+  int16_t n = (int16_t)arpPattern[idx] + (int16_t)(12 * oct);
+  if (n < 0) n = 0;
+  if (n > 127) n = 127;
+  return (uint8_t)n;
+}
+
+int16_t arpNextPos(int16_t L) {
+  if (L <= 1) return 0;
+
+  switch (arpMode) {
+    case ARP_UP:
+      return (int16_t)((arpPos + 1) % L);
+
+    case ARP_DOWN:
+      return (arpPos <= 0) ? (L - 1) : (arpPos - 1);
+
+    case ARP_UPDOWN:
+      {
+        int16_t np = arpPos + arpDir;
+        if (np >= L) {
+          arpDir = -1;
+          np = L - 2;
+        }
+        if (np < 0) {
+          arpDir = +1;
+          np = 1;
+        }
+        return np;
+      }
+
+    case ARP_RANDOM:
+      return (int16_t)(random(L));
+
+    default:
+      return arpPos;
+  }
+}
+
+// Release currently sounding arp note (if any)
+void arpStopCurrent() {
+  if (!arpNoteActive) return;
+
+  // In Split mode, arp assigned to lower only
+  if (playMode == 2 && arpLowerOnlyWhenSplit) {
+    int v = voiceAssignmentLower[arpCurrentNote];
+    if (v >= 0 && v <= 3) releaseVoice(arpCurrentNote, v);
+  } else if (playMode == 1) {
+    // DUAL: release in both engines if present
+    int vl = voiceAssignmentLower[arpCurrentNote];
+    if (vl >= 0 && vl <= 3) releaseVoice(arpCurrentNote, vl);
+
+    int vu = voiceAssignmentUpper[arpCurrentNote];
+    if (vu >= 4 && vu <= 7) releaseVoice(arpCurrentNote, vu);
+  } else {
+    // WHOLE: release across whatever voice currently has that note
+    for (int v = 0; v < 8; v++) {
+      if (voices[v].noteOn && voices[v].note == arpCurrentNote) {
+        releaseVoice(arpCurrentNote, v);
+      }
+    }
+  }
+
+  arpNoteActive = false;
+}
+
+// Play next arp note using your existing allocation rules
+void arpPlayNote(uint8_t note, uint8_t vel) {
+
+  // Split: lower only
+  if (playMode == 2 && arpLowerOnlyWhenSplit) {
+
+    switch (lowerData[P_keyboardModeSW]) {
+      case 0:
+        {
+          int v = getLowerSplitVoice(note);
+          assignVoice(note, vel, v);
+          voiceAssignmentLower[note] = v;
+          voiceToNoteLower[v] = note;
+        }
+        break;
+
+      case 1:
+        {
+          int v = getLowerSplitVoicePoly2(note);
+          // Poly2 behavior: if voice already has a note, release it first
+          int old = voiceToNoteLower[v];
+          if (old >= 0) {
+            releaseVoice(old, v);
+            voiceAssignmentLower[old] = -1;
+          }
+          assignVoice(note, vel, v);
+          voiceAssignmentLower[note] = v;
+          voiceToNoteLower[v] = note;
+        }
+        break;
+
+      case 2:
+        commandMonoNoteOnLower(note, vel);
+        break;
+
+      case 3:
+        commandUnisonNoteOnLower(note, vel);
+        break;
+    }
+
+    return;
+  }
+
+  // DUAL: drive both lower and upper simultaneously, per your existing logic
+  if (playMode == 1) {
+
+    // Lower
+    if (lowerData[P_keyboardModeSW] == 1) {
+      int v = getLowerSplitVoicePoly2(note);
+      int old = voiceToNoteLower[v];
+      if (old >= 0) {
+        releaseVoice(old, v);
+        voiceAssignmentLower[old] = -1;
+      }
+      assignVoice(note, vel, v);
+      voiceAssignmentLower[note] = v;
+      voiceToNoteLower[v] = note;
+
+    } else if (lowerData[P_keyboardModeSW] == 0) {
+      int v = getLowerSplitVoice(note);
+      assignVoice(note, vel, v);
+      voiceAssignmentLower[note] = v;
+      voiceToNoteLower[v] = note;
+
+    } else if (lowerData[P_keyboardModeSW] == 2) {
+      commandMonoNoteOnLower(note, vel);
+    } else if (lowerData[P_keyboardModeSW] == 3) {
+      commandUnisonNoteOnLower(note, vel);
+    }
+
+    // Upper
+    if (upperData[P_keyboardModeSW] == 1) {
+      int v = getUpperSplitVoicePoly2(note);
+      int old = voiceToNoteUpper[v - 4];
+      if (old >= 0) {
+        releaseVoice(old, v);
+        voiceAssignmentUpper[old] = -1;
+      }
+      assignVoice(note, vel, v);
+      voiceAssignmentUpper[note] = v;
+      voiceToNoteUpper[v - 4] = note;
+
+    } else if (upperData[P_keyboardModeSW] == 0) {
+      int v = getUpperSplitVoice(note);
+      assignVoice(note, vel, v);
+      voiceAssignmentUpper[note] = v;
+      voiceToNoteUpper[v - 4] = note;
+
+    } else if (upperData[P_keyboardModeSW] == 2) {
+      commandMonoNoteOnUpper(note, vel);
+    } else if (upperData[P_keyboardModeSW] == 3) {
+      commandUnisonNoteOnUpper(note, vel);
+    }
+
+    return;
+  }
+
+  // WHOLE: use your whole-mode allocation rules
+  if (playMode == 0) {
+    int voiceNum = -1;
+    switch (lowerData[P_keyboardModeSW]) {
+      case 0:
+        voiceNum = getVoiceNo(-1) - 1;
+        assignVoice(note, vel, voiceNum);
+        break;
+      case 1:
+        voiceNum = getVoiceNoPoly2(-1) - 1;
+        assignVoice(note, vel, voiceNum);
+        break;
+      case 2:
+        commandMonoNoteOn(note, vel);
+        break;
+      case 3:
+        commandUnisonNoteOn(note, vel);
+        break;
+    }
+    return;
+  }
+}
+
+void arpEngine() {
+
+  if (arpMode == ARP_OFF || arpLen == 0) {
+    if (arpNoteActive) arpStopCurrent();
+    arpRunning = false;
+    return;
+  }
+
+  if (!arpShouldStepNow()) return;
+
+  // Tight JP-8 feel: off at step boundary
+  if (arpNoteActive) arpStopCurrent();
+
+  int16_t L = arpUnfoldedLength();
+  if (L <= 0) return;
+
+  arpPos = arpNextPos(L);
+  uint8_t nextNote = arpUnfoldedNoteAt(arpPos);
+
+  arpPlayNote(nextNote, arpCurrentVel);
+  arpCurrentNote = nextNote;
+  arpNoteActive = true;
+  arpRunning = true;
+}
+
+void onArpExternalClockPulse() {
+  if (arpClockSrc != ARPCLK_EXTERNAL) return;
+  arpClkTickCount++;
+}
+
+void onMidiClockTick() {
+  if (arpClockSrc != ARPCLK_MIDI) return;
+  arpClkTickCount++;
+}
+
+bool arpShouldStepNow() {
+
+  if (arpClockSrc == ARPCLK_INTERNAL) {
+    return arpShouldStepNow_InternalSmooth();
+  }
+
+  // External / MIDI (unchanged)
+  if (arpTicksPerStep == 0) arpTicksPerStep = 1;
+  if (arpClkTickCount >= arpTicksPerStep) {
+    arpClkTickCount = 0;
+    return true;
+  }
+  return false;
+}
+
+inline void setArpMode(ArpMode m) {
+  ArpMode prev = arpMode;
+  bool wasOff = (prev == ARP_OFF);
+  bool nowOff = (m == ARP_OFF);
+
+  // If we are turning arp OFF, stop notes and restore modes
+  if (!wasOff && nowOff) {
+    arpMode = ARP_OFF;
+    arpNextStepUs = 0;
+    arpLastSmoothUs = 0;
+    if (arpNoteActive) arpStopCurrent();
+    arpRestorePoly2Off();
+
+    // Transport reset
+    arpPos = -1;
+    arpDir = +1;
+    arpClkTickCount = 0;
+    arpLastStepMs = millis();
+
+    updateArpLEDs();
+    return;
+  }
+
+  // If we are turning arp ON (OFF -> something)
+  if (wasOff && !nowOff) {
+
+    arpRange = lastArpRange;           // already preloaded by patch recall
+    arpEverEnabledSinceBoot = true;    // mark as used
+
+    arpForcePoly2On();
+  }
+
+  // Switching between arp modes while already on:
+  arpMode = m;
+
+  // Reset transport and stop any current arp note for clean switching
+  if (arpNoteActive) arpStopCurrent();
+  arpPos = -1;
+  arpDir = +1;
+  arpClkTickCount = 0;
+  arpLastStepMs = millis();
+
+  updateArpLEDs();
+}
+
+inline void toggleArpMode(ArpMode m) {
+  if (arpMode == m) setArpMode(ARP_OFF);
+  else setArpMode(m);
+}
+
+inline void setArpRange(uint8_t r) {
+  if (r < 1) r = 1;
+  if (r > 4) r = 4;
+
+  lastArpRange = r;  // remember for next time
+  arpRange = r;
+
+  // Reset transport so unfolding restarts cleanly
+  arpPos = -1;
+  arpDir = +1;
+  arpClkTickCount = 0;
+  arpLastStepMs = millis();
+
+  updateArpLEDs();
+}
+
+inline void updateArpLEDs() {
+
+  bool arpOn = (arpMode != ARP_OFF);
+
+  // --- Range LEDs ---
+  // User request: when arp OFF, range LEDs should be OFF
+  mcp1.digitalWrite(ARP_RANGE1_LED, (arpOn && arpRange == 1) ? HIGH : LOW);
+  mcp1.digitalWrite(ARP_RANGE2_LED, (arpOn && arpRange == 2) ? HIGH : LOW);
+  mcp2.digitalWrite(ARP_RANGE3_LED, (arpOn && arpRange == 3) ? HIGH : LOW);
+  mcp2.digitalWrite(ARP_RANGE4_LED, (arpOn && arpRange == 4) ? HIGH : LOW);
+
+  // --- Mode LEDs (already correct: off when arp OFF) ---
+  mcp2.digitalWrite(ARP_MODE_UP_LED, (arpMode == ARP_UP) ? HIGH : LOW);
+  mcp2.digitalWrite(ARP_MODE_DOWN_LED, (arpMode == ARP_DOWN) ? HIGH : LOW);
+  mcp2.digitalWrite(ARP_MODE_UP_DOWN_LED, (arpMode == ARP_UPDOWN) ? HIGH : LOW);
+  mcp2.digitalWrite(ARP_MODE_RAND_LED, (arpMode == ARP_RANDOM) ? HIGH : LOW);
+}
+
+inline void updateArpClockLEDs() {
+  switch (arpClockSrc) {
+    case ARPCLK_INTERNAL:
+      mcp2.digitalWrite(ARP_CLK_LED_RED, LOW);
+      mcp2.digitalWrite(ARP_CLK_LED_GRN, LOW);
+      break;
+
+    case ARPCLK_EXTERNAL:
+      mcp2.digitalWrite(ARP_CLK_LED_RED, HIGH);
+      mcp2.digitalWrite(ARP_CLK_LED_GRN, LOW);
+      break;
+
+    case ARPCLK_MIDI:
+      mcp2.digitalWrite(ARP_CLK_LED_RED, LOW);
+      mcp2.digitalWrite(ARP_CLK_LED_GRN, HIGH);
+      break;
+  }
+}
+
+inline float arpHzFromValue(uint8_t v) {
+  const float minHz = 1.0f;
+  const float maxHz = 20.0f;
+  float t = v / 127.0f;
+  return minHz * powf(maxHz / minHz, t);
+}
+
+inline uint16_t arpStepMsFromRate(uint8_t v) {
+  float hz = arpHzFromValue(v);
+  return (uint16_t)(1000.0f / hz + 0.5f);    // rounded ms per step
+}
+
+inline void setArpClockSrc(ArpClockSrc src) {
+  arpClockSrc = src;
+
+  // Reset clock accumulators and transport
+  arpClkTickCount = 0;
+  arpLastStepMs = millis();
+  arpPos = -1;
+  arpDir = +1;
+
+  // Stop any sounding arp note on clock change
+  if (arpNoteActive) arpStopCurrent();
+
+  updateArpClockLEDs();
+}
+
+inline void cycleArpClockSrc() {
+  switch (arpClockSrc) {
+    case ARPCLK_INTERNAL:
+      setArpClockSrc(ARPCLK_EXTERNAL);
+      break;
+    case ARPCLK_EXTERNAL:
+      setArpClockSrc(ARPCLK_MIDI);
+      break;
+    default:
+      setArpClockSrc(ARPCLK_INTERNAL);
+      break;
+  }
+}
+
+inline void updateArpTicksPerStep() {
+  switch (arpMidiDiv) {
+    case ARP_DIV_8TH: arpTicksPerStep = 12; break;
+    case ARP_DIV_8TH_TRIP: arpTicksPerStep = 8; break;
+    default: arpTicksPerStep = 6; break;
+  }
+}
+
+inline bool arpKeyPresentLower(uint8_t n) {
+  return keyDownLower[n] || holdLatchedLower[n];
+}
+
+inline bool arpKeyPresentUpper(uint8_t n) {
+  return keyDownUpper[n] || holdLatchedUpper[n];
+}
+
+inline bool arpConsumesKey(byte note) {
+  if (arpMode == ARP_OFF) return false;
+  if (arpInjecting) return false;  // arp-generated notes must still sound
+
+  // JP-8: in Split, arp is assigned to LOWER only
+  if (playMode == 2 && arpLowerOnlyWhenSplit) {
+    return (note < splitPoint);
+  }
+
+  // Whole and Dual: arp accepts notes over entire keyboard
+  // (and you generally don't want the chord to sound directly)
+  return true;
+}
+
+inline void arpUpdateSmoothHz() {
+  uint32_t now = micros();
+  if (arpLastSmoothUs == 0) {
+    arpLastSmoothUs = now;
+    arpHzSmooth = arpHzTarget;
+    return;
+  }
+
+  float dt = (now - arpLastSmoothUs) * 1e-6f;  // seconds
+  arpLastSmoothUs = now;
+
+  // Time constant (seconds). Larger = smoother/slower response.
+  const float tau = 0.20f; // 200ms is a good starting point
+
+  // One-pole coefficient based on dt
+  float a = dt / (tau + dt);           // stable even if dt varies
+  arpHzSmooth += (arpHzTarget - arpHzSmooth) * a;
+
+  // Safety clamp
+  if (arpHzSmooth < 1.0f) arpHzSmooth = 1.0f;
+  if (arpHzSmooth > 20.0f) arpHzSmooth = 20.0f;
+}
+
+inline bool arpShouldStepNow_InternalSmooth() {
+  arpUpdateSmoothHz();
+
+  uint32_t now = micros();
+
+  if (arpNextStepUs == 0) {
+    // initialize on first run
+    arpNextStepUs = now;
+    return true; // step immediately on start (optional; remove if you don't want immediate)
+  }
+
+  // time until next step elapsed?
+  if ((int32_t)(now - arpNextStepUs) < 0) return false;
+
+  // schedule next step using current smoothed interval
+  float intervalUsF = 1000000.0f / arpHzSmooth;
+  uint32_t intervalUs = (uint32_t)(intervalUsF + 0.5f);
+
+  // Advance by one interval (not "now + interval") to reduce jitter
+  arpNextStepUs += intervalUs;
+
+  // If we fell behind (e.g. debugger, heavy load), resync gracefully
+  if ((int32_t)(now - arpNextStepUs) > (int32_t)intervalUs) {
+    arpNextStepUs = now + intervalUs;
+  }
+
+  return true;
+}
+
+inline ArpMode patchToArpMode(uint8_t v) {
+  switch (v) {
+    case 1: return ARP_UP;
+    case 2: return ARP_DOWN;
+    case 3: return ARP_UPDOWN;
+    case 4: return ARP_RANDOM;
+    default: return ARP_OFF;
+  }
+}
+
+inline uint8_t arpModeToPatch(ArpMode m) {
+  switch (m) {
+    case ARP_UP:     return 1;
+    case ARP_DOWN:   return 2;
+    case ARP_UPDOWN: return 3;
+    case ARP_RANDOM: return 4;
+    default:         return 0;
+  }
+}
+
+inline uint8_t patchToArpRange(uint8_t v) {
+  // Accept either 0..3 or 1..4
+  if (v <= 3) return v + 1;          // 0..3 -> 1..4
+  if (v >= 1 && v <= 4) return v;    // 1..4 -> 1..4
+  return 4;
+}
+
+inline uint8_t arpRangeToPatch(uint8_t r) {
+  if (r < 1) r = 1;
+  if (r > 4) r = 4;
+  return (uint8_t)(r - 1);           // store 0..3
+}
+
+
+void updateArpRange(boolean announce) {
+
+  uint8_t r = patchToArpRange(lowerData[P_arpRangeSW]);
+
+  arpRange = r;
+  lastArpRange = r;    // so next ARP enable recalls the stored range
+
+  // Optional: restart unfolding when range changes
+  arpPos = -1;
+  arpDir = +1;
+
+  if (announce && !suppressParamAnnounce) {
+    showCurrentParameterPage("Arp Range", String(r));
+    startParameterDisplay();
+  }
+
+  updateArpLEDs();
+}
+
+void updateArpMode(boolean announce) {
+
+  ArpMode m = patchToArpMode(lowerData[P_arpModeSW]);
+
+  // If patch wants ARP ON, preload lastArpRange from patch so setArpMode() uses it.
+  if (m != ARP_OFF) {
+    lastArpRange = patchToArpRange(lowerData[P_arpRangeSW]);
+  }
+
+  setArpMode(m);
+
+  if (announce && !suppressParamAnnounce) {
+    const char* name =
+      (m == ARP_UP)     ? "Up" :
+      (m == ARP_DOWN)   ? "Down" :
+      (m == ARP_UPDOWN) ? "UpDown" :
+      (m == ARP_RANDOM) ? "Random" : "Off";
+
+    showCurrentParameterPage("Arp Mode", String(name));
+    startParameterDisplay();
+  }
+
+  // Ensure LEDs reflect range for ON patches (and range LEDs remain off when OFF)
+  updateArpLEDs();
+}
+
+// Hold functions
+
 inline bool holdEffectiveLower() {
   if (playMode == 2) return holdManualLower;  // SPLIT
   return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
@@ -309,29 +909,28 @@ inline bool holdEffectiveUpper() {
 
 void reconcileHoldReleases() {
 
-  // Manual-only effective hold (no pedal yet)
   auto holdEffectiveLower = [&]() -> bool {
-    if (playMode == 2) return holdManualLower;               // SPLIT
-    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+    if (playMode == 2) return holdManualLower;  // SPLIT
+    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
   };
   auto holdEffectiveUpper = [&]() -> bool {
-    if (playMode == 2) return holdManualUpper;               // SPLIT
-    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+    if (playMode == 2) return holdManualUpper;  // SPLIT
+    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
   };
 
   // -------------------------
-  // WHOLE or DUAL: treat hold as global; release by scanning voices[]
+  // WHOLE or DUAL: hold is global
   // -------------------------
   if (playMode != 2) {
+
+    // Only reconcile when hold is effectively OFF
     if (!(holdManualLower || holdManualUpper)) {
-      // Hold is OFF globally -> release any latched notes that are not physically held
+
       for (int n = 0; n < 128; n++) {
 
         bool latched = holdLatchedLower[n] || holdLatchedUpper[n];
         if (!latched) continue;
 
-        // "physically held" in whole/dual: if you mirrored keyDownLower/Upper in noteOn,
-        // checking either is fine; use both for safety.
         bool phys = keyDownLower[n] || keyDownUpper[n] || keyDownWhole[n];
         if (phys) continue;
 
@@ -342,35 +941,98 @@ void reconcileHoldReleases() {
           }
         }
 
+        // Clear latch
         holdLatchedLower[n] = false;
         holdLatchedUpper[n] = false;
+
+        // ARP: if note no longer present anywhere, remove from pattern
+        if (!arpInjecting && arpMode != ARP_OFF) {
+          bool present = arpKeyPresentLower(n) || arpKeyPresentUpper(n);
+          if (!present) arpRemoveNote((byte)n);
+        }
+      }
+
+      // If pattern emptied, stop arp immediately
+      if (arpMode != ARP_OFF && arpLen == 0 && arpNoteActive) {
+        arpStopCurrent();
       }
     }
-    return; // done for whole/dual
+
+    return;
   }
 
   // -------------------------
-  // SPLIT: release per-zone using your existing note->voice mappings
+  // SPLIT: Lower/Upper independent
   // -------------------------
+
+  // LOWER
   if (!holdEffectiveLower()) {
     for (int n = 0; n < 128; n++) {
       if (holdLatchedLower[n] && !keyDownLower[n]) {
+
         int v = voiceAssignmentLower[n];
         if (v >= 0 && v <= 3) releaseVoice((byte)n, v);
+
         holdLatchedLower[n] = false;
+
+        // ARP: JP-8 uses LOWER only in split (if configured that way)
+        if (!arpInjecting && arpMode != ARP_OFF && arpLowerOnlyWhenSplit) {
+          if (!arpKeyPresentLower(n)) arpRemoveNote((byte)n);
+        }
       }
     }
   }
 
+  // UPPER
   if (!holdEffectiveUpper()) {
     for (int n = 0; n < 128; n++) {
       if (holdLatchedUpper[n] && !keyDownUpper[n]) {
+
         int v = voiceAssignmentUpper[n];
         if (v >= 4 && v <= 7) releaseVoice((byte)n, v);
+
         holdLatchedUpper[n] = false;
+
+        // Only prune upper if you ever allow arp to consume upper in split
+        if (!arpInjecting && arpMode != ARP_OFF && !arpLowerOnlyWhenSplit) {
+          if (!arpKeyPresentUpper(n)) arpRemoveNote((byte)n);
+        }
       }
     }
   }
+
+  if (arpMode != ARP_OFF && arpLen == 0 && arpNoteActive) {
+    arpStopCurrent();
+  }
+}
+
+inline void arpForcePoly2On() {
+  if (arpForcedPoly2) return;
+
+  savedLowerKBMode = lowerData[P_keyboardModeSW];
+  savedUpperKBMode = upperData[P_keyboardModeSW];
+
+  // JP-8: when split, arp is assigned to LOWER only
+  if (playMode == 2 && arpLowerOnlyWhenSplit) {
+    lowerData[P_keyboardModeSW] = 1;  // Poly2 lower only
+  } else {
+    // Whole / Dual: force both
+    lowerData[P_keyboardModeSW] = 1;
+    upperData[P_keyboardModeSW] = 1;
+  }
+  updatekeyboardMode(0);
+  arpForcedPoly2 = true;
+}
+
+inline void arpRestorePoly2Off() {
+  if (!arpForcedPoly2) return;
+
+  // restore whatever was previously selected
+  lowerData[P_keyboardModeSW] = savedLowerKBMode;
+  upperData[P_keyboardModeSW] = savedUpperKBMode;
+
+  updatekeyboardMode(0);
+  arpForcedPoly2 = false;
 }
 
 inline bool isKeyPhysicallyDownForVoice(int voiceIdx) {
@@ -680,6 +1342,59 @@ void mainButtonChanged(Button *btn, bool released) {
       }
       break;
 
+    case ARP_CLK_BUTTON:
+      if (!released) {
+        cycleArpClockSrc();
+      }
+      break;
+
+    case ARP_MODE_UP_BUTTON:
+      if (!released) 
+        toggleArpMode(ARP_UP);
+        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      break;
+
+    case ARP_MODE_DOWN_BUTTON:
+      if (!released) 
+        toggleArpMode(ARP_DOWN);
+        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      break;
+
+    case ARP_MODE_UP_DOWN_BUTTON:
+      if (!released) 
+        toggleArpMode(ARP_UPDOWN);
+        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      break;
+
+    case ARP_MODE_RANDOM_BUTTON:
+      if (!released) 
+        toggleArpMode(ARP_RANDOM);
+        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      break;
+
+    case ARP_RANGE1_BUTTON:
+      if (!released) 
+        setArpRange(1);
+        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      break;
+
+    case ARP_RANGE2_BUTTON:
+      if (!released) 
+        setArpRange(2);
+        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      break;
+
+    case ARP_RANGE3_BUTTON:
+      if (!released) 
+        setArpRange(3);
+        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      break;
+
+    case ARP_RANGE4_BUTTON:
+      if (!released) 
+        setArpRange(4);
+        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      break;
 
     case MANUAL_BUTTON:
       if (!released) {
@@ -1127,11 +1842,25 @@ void myNoteOn(byte channel, byte note, byte velocity) {
     holdLatchedUpper[note] = false;
   } else {  // WHOLE
     keyDownWhole[note] = true;
-    // you can choose to mirror to both arrays as well if you want:
     keyDownLower[note] = true;
     keyDownUpper[note] = true;
     holdLatchedLower[note] = false;
     holdLatchedUpper[note] = false;
+  }
+
+  // -------------------- ARP: capture entry order (ignore injected notes) --------------------
+  if (!arpInjecting && arpMode != ARP_OFF) {
+    if (playMode == 2 && arpLowerOnlyWhenSplit) {
+      if (note < splitPoint) arpAddNote(note);
+    } else {
+      arpAddNote(note);
+    }
+    arpCurrentVel = velocity;
+  }
+
+  // -------------------- ARP ACTIVE: keys are pattern entry only (no chord sound) --------------------
+  if (arpConsumesKey(note)) {
+    return;
   }
 
   int voiceNum = -1;
@@ -1255,71 +1984,93 @@ void myNoteOn(byte channel, byte note, byte velocity) {
 
 void myNoteOff(byte channel, byte note, byte velocity) {
 
-  // -----------------------------
-  // JP-8 HOLD: update physical key state + optionally latch (and RETURN)
-  // -----------------------------
-
-  // Helper lambdas (manual-only; no pedal yet)
   auto holdEffectiveLower = [&]() -> bool {
-    if (playMode == 2) return holdManualLower;               // SPLIT
-    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+    if (playMode == 2) return holdManualLower;  // SPLIT
+    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
   };
   auto holdEffectiveUpper = [&]() -> bool {
-    if (playMode == 2) return holdManualUpper;               // SPLIT
-    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+    if (playMode == 2) return holdManualUpper;  // SPLIT
+    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
   };
 
-  // Decide which zone(s) this noteOff belongs to for physical state tracking + hold latching
+  // "present" for arp removal rules = physically down OR held-by-hold
+  auto arpPresentLower = [&](uint8_t n) -> bool {
+    return keyDownLower[n] || holdLatchedLower[n];
+  };
+  auto arpPresentUpper = [&](uint8_t n) -> bool {
+    return keyDownUpper[n] || holdLatchedUpper[n];
+  };
+
   if (playMode == 2) {
-    // SPLIT: zone depends on splitPoint
-    if (note < splitPoint) {
-      keyDownLower[note] = false;
+    // SPLIT
+    if (note < splitPoint) keyDownLower[note] = false;
+    else keyDownUpper[note] = false;
 
-      // If HOLD is active for LOWER, latch and DO NOT release any voices
-      if (holdEffectiveLower()) {
-        holdLatchedLower[note] = true;
-        return;
-      }
-    } else {
-      keyDownUpper[note] = false;
-
-      // If HOLD is active for UPPER, latch and DO NOT release any voices
-      if (holdEffectiveUpper()) {
-        holdLatchedUpper[note] = true;
-        return;
-      }
-    }
   } else if (playMode == 1) {
-    // DUAL: a single key drives both engines, so noteOff applies to BOTH
+    // DUAL: same key affects both engines
     keyDownLower[note] = false;
     keyDownUpper[note] = false;
 
-    if (holdEffectiveLower()) { // global in DUAL
-      holdLatchedLower[note] = true;
-      holdLatchedUpper[note] = true;
-      return;
-    }
   } else {
     // WHOLE
     keyDownWhole[note] = false;
-    // Optional mirroring (recommended so voice-steal "phys held" works consistently)
+    // Recommended mirroring so "physically held" tests work consistently everywhere
     keyDownLower[note] = false;
     keyDownUpper[note] = false;
+  }
 
-    if (holdEffectiveLower()) { // global in WHOLE
+  if (playMode == 2) {
+    // SPLIT: latch only the side the note belongs to
+    if (note < splitPoint) {
+      if (holdEffectiveLower()) {
+        holdLatchedLower[note] = true;
+
+        // ARP: do not remove; note remains present via holdLatchedLower
+        return;
+      }
+    } else {
+      if (holdEffectiveUpper()) {
+        holdLatchedUpper[note] = true;
+
+        // ARP: do not remove; note remains present via holdLatchedUpper
+        return;
+      }
+    }
+
+  } else {
+    // WHOLE or DUAL: hold is global
+    if (holdEffectiveLower()) {  // same truth for upper in whole/dual
       holdLatchedLower[note] = true;
       holdLatchedUpper[note] = true;
+
+      // ARP: do not remove; note remains present via holdLatched*
       return;
     }
   }
 
-  // If we get here, HOLD is NOT sustaining this note; proceed with your original release logic.
+  if (!arpInjecting && arpMode != ARP_OFF) {
+
+    if (playMode == 2 && arpLowerOnlyWhenSplit) {
+      // Split: JP-8 assigns arp to LOWER only
+      if (note < splitPoint) {
+        if (!arpPresentLower(note)) arpRemoveNote(note);
+      }
+    } else {
+      // Whole/Dual: treat present if in either engine
+      bool present = arpPresentLower(note) || arpPresentUpper(note);
+      if (!present) arpRemoveNote(note);
+    }
+  }
+
+  if (arpConsumesKey(note)) {
+    return;
+  }
 
   int assignedVoice = voiceAssignment[note];
 
   switch (playMode) {
 
-    // WHOLE MODE (unchanged behavior)
+    // WHOLE MODE
     case 0:
       switch (lowerData[P_keyboardModeSW]) {
         case 0:
@@ -1335,8 +2086,9 @@ void myNoteOff(byte channel, byte note, byte velocity) {
       }
       break;
 
-    // DUAL MODE (unchanged behavior)
-    case 1: {
+    // DUAL MODE
+    case 1:
+      {
         // Lower
         if (lowerData[P_keyboardModeSW] == 2) commandMonoNoteOffLower(note);
         else if (lowerData[P_keyboardModeSW] == 3) commandUnisonNoteOffLower(note);
@@ -1363,8 +2115,9 @@ void myNoteOff(byte channel, byte note, byte velocity) {
       }
       break;
 
-    // SPLIT MODE (unchanged behavior)
-    case 2: {
+    // SPLIT MODE
+    case 2:
+      {
         if (note < splitPoint) {
           if (lowerData[P_keyboardModeSW] == 2) {
             commandMonoNoteOffLower(note);
@@ -2016,19 +2769,19 @@ void updateLFORate(boolean announce) {
 
 void updatearpRate(boolean announce) {
 
+  uint8_t v = lowerData[P_arpRate];
+
   if (announce && !suppressParamAnnounce) {
-    showCurrentParameterPage("Arp Rate", String(arpRatestr) + " Hz");
+    float hz = arpHzFromValue(v);
+    showCurrentParameterPage("Arp Rate", String(hz, 2) + " Hz");
     startParameterDisplay();
   }
-  if (upperSW) {
-    midiCCOut(CCarpRate, upperData[P_arpRate]);
 
-  } else {
-    midiCCOut(CCarpRate, lowerData[P_arpRate]);
+  midiCCOut(CCarpRate, v);
 
-    if (wholemode) {
-    }
-  }
+  // if (arpClockSrc == ARPCLK_INTERNAL) arpLastStepMs = millis();
+  // else arpClkTickCount = 0;
+  // arpClkTickCount = 0;
 }
 
 void updatevcoLfoModDepth(boolean announce) {
@@ -4065,17 +4818,14 @@ void myControlChange(byte channel, byte control, int value) {
       break;
 
     case CCarpRate:
-      if (upperSW) {
-        upperData[P_arpRate] = value;
-      } else {
+      {
         lowerData[P_arpRate] = value;
-        if (wholemode) {
-          upperData[P_arpRate] = value;
-        }
+        arpHzTarget = arpHzFromValue(lowerData[P_arpRate]);
+        arpRatestr = ARPTEMPO[value];  // keep your existing table if you like it
+        updatearpRate(1);
       }
-      arpRatestr = LFOTEMPO[value];  // for display
-      updatearpRate(1);
       break;
+
 
     case CCvcoLfoModDepth:
       value = map(value, 0, 127, 0, 10);
@@ -4786,6 +5536,7 @@ void upperParamsToDisplay() {
   updatelfoWaveform(0);
   updatevcoLfoModDepth(0);
   updatevcfLfoModDepth(0);
+  updatearpRate(0);
 }
 
 void lowerParamsToDisplay() {
@@ -4821,6 +5572,7 @@ void lowerParamsToDisplay() {
   updatelfoWaveform(0);
   updatevcoLfoModDepth(0);
   updatevcfLfoModDepth(0);
+  updatearpRate(0);
 }
 
 void setAllButtons() {
@@ -4839,6 +5591,8 @@ void setAllButtons() {
   updateenv1InvertSW(0);
   updateenv2KeyFollowSW(0);
   updatechorus(0);
+  updateArpRange(0);
+  updateArpMode(0);
 }
 
 String getCurrentPatchData() {
@@ -5966,6 +6720,7 @@ void loop() {
   MIDI7.read();
   usbMIDI.read(midiChannel);
   jp8UpdateFirstDigitLed();
+  arpEngine();
 
   if (waitingToUpdate && (millis() - lastDisplayTriggerTime >= displayTimeout)) {
     updateScreen();  // retrigger

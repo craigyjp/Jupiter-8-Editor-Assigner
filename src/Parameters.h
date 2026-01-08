@@ -7,7 +7,7 @@ unsigned long lastDisplayTriggerTime = 0;
 bool waitingToUpdate = false;
 const unsigned long displayTimeout = 2000;  // e.g. 5 seconds
 
-// JP8 Arpeggiator
+// JP8 Hold
 
 bool keyDownLower[128] = {0};
 bool keyDownUpper[128] = {0};
@@ -19,6 +19,66 @@ bool holdPedal = false;     // DP-2 pressed
 
 bool holdLatchedLower[128] = {0}; // notes sustaining because Hold caught their note-off
 bool holdLatchedUpper[128] = {0};
+
+// JP8 Arpeggiator
+
+// -------------------- ARP CONFIG --------------------
+enum ArpMode : uint8_t { ARP_OFF=0, ARP_UP, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM };
+enum ArpClockSrc : uint8_t { ARPCLK_INTERNAL=0, ARPCLK_EXTERNAL, ARPCLK_MIDI };
+
+volatile ArpClockSrc arpClockSrc = ARPCLK_INTERNAL;
+
+enum ArpMidiDiv : uint8_t { ARP_DIV_8TH=0, ARP_DIV_8TH_TRIP, ARP_DIV_16TH };
+volatile ArpMidiDiv arpMidiDiv = ARP_DIV_16TH;
+
+// Your existing arpRate (0..127 assumed)
+extern uint8_t arpRate;
+
+// External / MIDI clock step accumulator
+volatile uint8_t arpClkTickCount = 0;     // counts pulses/ticks until a step
+volatile uint8_t arpTicksPerStep = 6;     // default: 16th @ MIDI clock (24ppqn -> 6 ticks)
+volatile ArpMode arpMode = ARP_OFF;
+volatile uint8_t arpRange = 4;         // 1..4 octaves
+volatile uint16_t arpStepMs = 125;      // step interval in ms (internal clock)
+volatile float arpGate = 0.50f;         // not strictly needed; we do step-boundary note off
+
+// In Split mode, JP-8 assigns arp to LOWER only. We'll honor that.
+bool arpLowerOnlyWhenSplit = true;
+
+// Prevent arp notes from affecting hold/keyDown tracking
+bool arpInjecting = false;
+
+// -------------------- ARP PATTERN (JP-8 style) --------------------
+uint8_t arpPattern[8] = {0};
+uint8_t arpLen = 0;
+
+// Transport over unfolded pattern
+int16_t arpPos = -1;    // index into unfolded sequence
+int8_t  arpDir = +1;    // for UPDOWN ping-pong
+
+// Current sounding arp note (so we can note-off at next step)
+bool arpNoteActive = false;
+uint8_t arpCurrentNote = 0;
+uint8_t arpCurrentVel = 100;
+
+// Internal clock
+uint32_t arpLastStepMs = 0;
+bool arpRunning = false;
+
+float arpHzTarget  = 4.0f;   // desired Hz from pot
+float arpHzSmooth  = 4.0f;   // smoothed Hz used by engine
+uint32_t arpNextStepUs = 0;  // absolute time of next step (micros)
+uint32_t arpLastSmoothUs = 0;
+
+// Remember last arp range (JP-8: defaults to 4 after power-up, then remembers last used)
+uint8_t lastArpRange = 4;
+bool arpEverEnabledSinceBoot = false;
+
+// Save/restore keyboard assign modes when arp forces Poly2
+uint8_t savedLowerKBMode = 0;
+uint8_t savedUpperKBMode = 0;
+bool arpForcedPoly2 = false;
+
 
 // JP8 style patch handling
 
