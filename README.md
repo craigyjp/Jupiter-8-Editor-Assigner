@@ -16,12 +16,12 @@ I'm going to include an arpeggiator section similar to the Jupiter 8 and patch m
 
 The JP-08 modules have portamento, delay and chorus effects that are hidden from the front panel and only available via MIDI.
 
+The VCF Bend is not practical to implement so I've replaced that with aftertouch depth and destinations.
+
 # Things to do
 
 * Implement the hold sections
-* Add the patch and bank buttons
 * Add the arpeggiator
-* Decide how to handle the filter bend control.
 
 
 
