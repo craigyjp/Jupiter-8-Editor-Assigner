@@ -295,6 +295,139 @@ void startParameterDisplay() {
   waitingToUpdate = true;
 }
 
+// Arpeggiator
+
+inline bool holdEffectiveLower() {
+  if (playMode == 2) return holdManualLower;  // SPLIT
+  return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+}
+
+inline bool holdEffectiveUpper() {
+  if (playMode == 2) return holdManualUpper;  // SPLIT
+  return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+}
+
+void reconcileHoldReleases() {
+
+  // Manual-only effective hold (no pedal yet)
+  auto holdEffectiveLower = [&]() -> bool {
+    if (playMode == 2) return holdManualLower;               // SPLIT
+    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+  };
+  auto holdEffectiveUpper = [&]() -> bool {
+    if (playMode == 2) return holdManualUpper;               // SPLIT
+    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+  };
+
+  // -------------------------
+  // WHOLE or DUAL: treat hold as global; release by scanning voices[]
+  // -------------------------
+  if (playMode != 2) {
+    if (!(holdManualLower || holdManualUpper)) {
+      // Hold is OFF globally -> release any latched notes that are not physically held
+      for (int n = 0; n < 128; n++) {
+
+        bool latched = holdLatchedLower[n] || holdLatchedUpper[n];
+        if (!latched) continue;
+
+        // "physically held" in whole/dual: if you mirrored keyDownLower/Upper in noteOn,
+        // checking either is fine; use both for safety.
+        bool phys = keyDownLower[n] || keyDownUpper[n] || keyDownWhole[n];
+        if (phys) continue;
+
+        // Release ALL voices currently playing this note
+        for (int v = 0; v < 8; v++) {
+          if (voices[v].noteOn && voices[v].note == n) {
+            releaseVoice((byte)n, v);
+          }
+        }
+
+        holdLatchedLower[n] = false;
+        holdLatchedUpper[n] = false;
+      }
+    }
+    return; // done for whole/dual
+  }
+
+  // -------------------------
+  // SPLIT: release per-zone using your existing note->voice mappings
+  // -------------------------
+  if (!holdEffectiveLower()) {
+    for (int n = 0; n < 128; n++) {
+      if (holdLatchedLower[n] && !keyDownLower[n]) {
+        int v = voiceAssignmentLower[n];
+        if (v >= 0 && v <= 3) releaseVoice((byte)n, v);
+        holdLatchedLower[n] = false;
+      }
+    }
+  }
+
+  if (!holdEffectiveUpper()) {
+    for (int n = 0; n < 128; n++) {
+      if (holdLatchedUpper[n] && !keyDownUpper[n]) {
+        int v = voiceAssignmentUpper[n];
+        if (v >= 4 && v <= 7) releaseVoice((byte)n, v);
+        holdLatchedUpper[n] = false;
+      }
+    }
+  }
+}
+
+inline bool isKeyPhysicallyDownForVoice(int voiceIdx) {
+  int n = voices[voiceIdx].note;
+  if (n < 0 || n > 127) return false;
+
+  if (voiceIdx < 4) return keyDownLower[n];
+  else return keyDownUpper[n];
+}
+
+int oldestVoicePreferNotPhysHeld(int vStart, int vEndInclusive) {
+  int best = vStart;
+  unsigned long bestTime = 0;
+  bool found = false;
+
+  // 1) oldest voice where key is NOT physically held
+  for (int v = vStart; v <= vEndInclusive; v++) {
+    if (!voiceOn[v]) continue;
+    if (isKeyPhysicallyDownForVoice(v)) continue;
+    if (!found || voices[v].timeOn < bestTime) {
+      best = v;
+      bestTime = voices[v].timeOn;
+      found = true;
+    }
+  }
+  if (found) return best;
+
+  // 2) otherwise fall back to oldest regardless
+  best = vStart;
+  bestTime = voices[vStart].timeOn;
+  for (int v = vStart + 1; v <= vEndInclusive; v++) {
+    if (voices[v].timeOn < bestTime) {
+      best = v;
+      bestTime = voices[v].timeOn;
+    }
+  }
+  return best;
+}
+
+inline void updateHoldLEDs() {
+  bool lowerLedOn = false;
+  bool upperLedOn = false;
+
+  if (playMode == 2) {  // SPLIT
+    lowerLedOn = holdManualLower;
+    upperLedOn = holdManualUpper;
+  } else {
+    // WHOLE or DUAL: global hold
+    bool globalHold = holdManualLower || holdManualUpper;
+    lowerLedOn = globalHold;
+    upperLedOn = globalHold;
+  }
+
+  mcp4.digitalWrite(LOWER_LED, lowerLedOn ? HIGH : LOW);
+  mcp4.digitalWrite(UPPER_LED, upperLedOn ? HIGH : LOW);
+}
+
 // Patch creation in jupiter 8 style
 
 static inline uint8_t &activeSlotRC() {
@@ -512,6 +645,41 @@ void mainButtonChanged(Button *btn, bool released) {
         myControlChange(midiChannel, CCupperSW, upperSW);
       }
       break;
+
+    case LOWER_BUTTON:
+      if (!released) {
+        if (playMode == 2) {
+          // SPLIT: Lower Hold is independent
+          holdManualLower = !holdManualLower;
+        } else {
+          // WHOLE/DUAL: global hold
+          bool newGlobal = !(holdManualLower || holdManualUpper);
+          holdManualLower = newGlobal;
+          holdManualUpper = newGlobal;
+        }
+
+        reconcileHoldReleases();
+        updateHoldLEDs();
+      }
+      break;
+
+    case UPPER_BUTTON:
+      if (!released) {
+        if (playMode == 2) {
+          // SPLIT: Upper Hold is independent
+          holdManualUpper = !holdManualUpper;
+        } else {
+          // WHOLE/DUAL: global hold
+          bool newGlobal = !(holdManualLower || holdManualUpper);
+          holdManualLower = newGlobal;
+          holdManualUpper = newGlobal;
+        }
+
+        reconcileHoldReleases();
+        updateHoldLEDs();
+      }
+      break;
+
 
     case MANUAL_BUTTON:
       if (!released) {
@@ -943,6 +1111,29 @@ void myNoteOn(byte channel, byte note, byte velocity) {
 
   prevNote = note;
 
+  // --- JP-8 HOLD: physical key down tracking ---
+  if (playMode == 2) {  // SPLIT
+    if (note < splitPoint) {
+      keyDownLower[note] = true;
+      holdLatchedLower[note] = false;
+    } else {
+      keyDownUpper[note] = true;
+      holdLatchedUpper[note] = false;
+    }
+  } else if (playMode == 1) {  // DUAL: note goes to BOTH engines
+    keyDownLower[note] = true;
+    keyDownUpper[note] = true;
+    holdLatchedLower[note] = false;
+    holdLatchedUpper[note] = false;
+  } else {  // WHOLE
+    keyDownWhole[note] = true;
+    // you can choose to mirror to both arrays as well if you want:
+    keyDownLower[note] = true;
+    keyDownUpper[note] = true;
+    holdLatchedLower[note] = false;
+    holdLatchedUpper[note] = false;
+  }
+
   int voiceNum = -1;
 
   switch (playMode) {
@@ -1064,11 +1255,71 @@ void myNoteOn(byte channel, byte note, byte velocity) {
 
 void myNoteOff(byte channel, byte note, byte velocity) {
 
+  // -----------------------------
+  // JP-8 HOLD: update physical key state + optionally latch (and RETURN)
+  // -----------------------------
+
+  // Helper lambdas (manual-only; no pedal yet)
+  auto holdEffectiveLower = [&]() -> bool {
+    if (playMode == 2) return holdManualLower;               // SPLIT
+    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+  };
+  auto holdEffectiveUpper = [&]() -> bool {
+    if (playMode == 2) return holdManualUpper;               // SPLIT
+    return holdManualLower || holdManualUpper;               // WHOLE/DUAL global
+  };
+
+  // Decide which zone(s) this noteOff belongs to for physical state tracking + hold latching
+  if (playMode == 2) {
+    // SPLIT: zone depends on splitPoint
+    if (note < splitPoint) {
+      keyDownLower[note] = false;
+
+      // If HOLD is active for LOWER, latch and DO NOT release any voices
+      if (holdEffectiveLower()) {
+        holdLatchedLower[note] = true;
+        return;
+      }
+    } else {
+      keyDownUpper[note] = false;
+
+      // If HOLD is active for UPPER, latch and DO NOT release any voices
+      if (holdEffectiveUpper()) {
+        holdLatchedUpper[note] = true;
+        return;
+      }
+    }
+  } else if (playMode == 1) {
+    // DUAL: a single key drives both engines, so noteOff applies to BOTH
+    keyDownLower[note] = false;
+    keyDownUpper[note] = false;
+
+    if (holdEffectiveLower()) { // global in DUAL
+      holdLatchedLower[note] = true;
+      holdLatchedUpper[note] = true;
+      return;
+    }
+  } else {
+    // WHOLE
+    keyDownWhole[note] = false;
+    // Optional mirroring (recommended so voice-steal "phys held" works consistently)
+    keyDownLower[note] = false;
+    keyDownUpper[note] = false;
+
+    if (holdEffectiveLower()) { // global in WHOLE
+      holdLatchedLower[note] = true;
+      holdLatchedUpper[note] = true;
+      return;
+    }
+  }
+
+  // If we get here, HOLD is NOT sustaining this note; proceed with your original release logic.
+
   int assignedVoice = voiceAssignment[note];
 
   switch (playMode) {
 
-    // WHOLE MODE corrected explicitly
+    // WHOLE MODE (unchanged behavior)
     case 0:
       switch (lowerData[P_keyboardModeSW]) {
         case 0:
@@ -1084,10 +1335,9 @@ void myNoteOff(byte channel, byte note, byte velocity) {
       }
       break;
 
-      // DUAL MODE corrected explicitly
-    case 1:  // DUAL MODE Poly2 fix explicitly (note-off):
-      {
-        // Lower Split
+    // DUAL MODE (unchanged behavior)
+    case 1: {
+        // Lower
         if (lowerData[P_keyboardModeSW] == 2) commandMonoNoteOffLower(note);
         else if (lowerData[P_keyboardModeSW] == 3) commandUnisonNoteOffLower(note);
         else {
@@ -1099,7 +1349,7 @@ void myNoteOff(byte channel, byte note, byte velocity) {
           }
         }
 
-        // Upper Split
+        // Upper
         if (upperData[P_keyboardModeSW] == 2) commandMonoNoteOffUpper(note);
         else if (upperData[P_keyboardModeSW] == 3) commandUnisonNoteOffUpper(note);
         else {
@@ -1113,9 +1363,8 @@ void myNoteOff(byte channel, byte note, byte velocity) {
       }
       break;
 
-      // SPLIT MODE corrected explicitly
-    case 2:  // SPLIT MODE explicitly corrected (note-off):
-      {
+    // SPLIT MODE (unchanged behavior)
+    case 2: {
         if (note < splitPoint) {
           if (lowerData[P_keyboardModeSW] == 2) {
             commandMonoNoteOffLower(note);
@@ -1261,27 +1510,8 @@ void commandUnisonNoteOffLower(byte note) {
   commandLastNoteUniLower();
 }
 
-int getUpperSplitVoice(byte note) {
-  for (int i = 0; i < 4; i++) {
-    int idx = 4 + (upperSplitVoicePointer + i) % 4;
-    if (!voiceOn[idx]) {
-      upperSplitVoicePointer = (idx + 1) % 4;
-      return idx;
-    }
-  }
-  // fallback oldest (poly2 style if no voice free)
-  int oldest = 4;
-  unsigned long oldestTime = voices[4].timeOn;
-  for (int i = 5; i < 8; i++)
-    if (voices[i].timeOn < oldestTime) {
-      oldest = i;
-      oldestTime = voices[i].timeOn;
-    }
-  upperSplitVoicePointer = ((oldest - 4) + 1) % 4;
-  return oldest;
-}
-
 int getLowerSplitVoice(byte note) {
+  // Try round-robin for a free voice first (Poly1 behaviour)
   for (int i = 0; i < 4; i++) {
     int idx = (lowerSplitVoicePointer + i) % 4;
     if (!voiceOn[idx]) {
@@ -1289,47 +1519,47 @@ int getLowerSplitVoice(byte note) {
       return idx;
     }
   }
-  int oldest = 0;
-  unsigned long oldestTime = voices[0].timeOn;
-  for (int i = 1; i < 4; i++)
-    if (voices[i].timeOn < oldestTime) {
-      oldest = i;
-      oldestTime = voices[i].timeOn;
-    }
+
+  // No free voice: steal oldest, but prefer not physically held (JP-8 Hold behaviour)
+  int oldest = oldestVoicePreferNotPhysHeld(0, 3);
   lowerSplitVoicePointer = (oldest + 1) % 4;
   return oldest;
 }
 
-int getLowerSplitVoicePoly2(byte note) {
-  for (int i = 0; i < 4; i++)
-    if (!voiceOn[i]) return i;
-
-  int oldest = 0;
-  unsigned long oldestTime = voices[0].timeOn;
-
-  for (int i = 1; i < 4; i++) {
-    if (voices[i].timeOn < oldestTime) {
-      oldest = i;
-      oldestTime = voices[i].timeOn;
+int getUpperSplitVoice(byte note) {
+  // Try round-robin for a free voice first (Poly1 behaviour)
+  for (int i = 0; i < 4; i++) {
+    int idx = 4 + (upperSplitVoicePointer + i) % 4;
+    if (!voiceOn[idx]) {
+      upperSplitVoicePointer = (idx - 4 + 1) % 4;  // pointer is 0..3
+      return idx;
     }
   }
+
+  // No free voice: steal oldest, but prefer not physically held (JP-8 Hold behaviour)
+  int oldest = oldestVoicePreferNotPhysHeld(4, 7);
+  upperSplitVoicePointer = ((oldest - 4) + 1) % 4;
   return oldest;
 }
 
-int getUpperSplitVoicePoly2(byte note) {
-  for (int i = 4; i < 8; i++)
+int getLowerSplitVoicePoly2(byte note) {
+  // Poly2: pick the lowest-numbered free voice if any
+  for (int i = 0; i < 4; i++) {
     if (!voiceOn[i]) return i;
-
-  int oldest = 4;
-  unsigned long oldestTime = voices[4].timeOn;
-
-  for (int i = 5; i < 8; i++) {
-    if (voices[i].timeOn < oldestTime) {
-      oldest = i;
-      oldestTime = voices[i].timeOn;
-    }
   }
-  return oldest;
+
+  // No free voice: steal oldest, but prefer not physically held (JP-8 Hold behaviour)
+  return oldestVoicePreferNotPhysHeld(0, 3);
+}
+
+int getUpperSplitVoicePoly2(byte note) {
+  // Poly2: pick the lowest-numbered free voice if any
+  for (int i = 4; i < 8; i++) {
+    if (!voiceOn[i]) return i;
+  }
+
+  // No free voice: steal oldest, but prefer not physically held (JP-8 Hold behaviour)
+  return oldestVoicePreferNotPhysHeld(4, 7);
 }
 
 inline void sendVoiceNoteOn(int voiceIdx, byte note, byte vel) {

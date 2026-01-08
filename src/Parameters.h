@@ -7,7 +7,21 @@ unsigned long lastDisplayTriggerTime = 0;
 bool waitingToUpdate = false;
 const unsigned long displayTimeout = 2000;  // e.g. 5 seconds
 
+// JP8 Arpeggiator
+
+bool keyDownLower[128] = {0};
+bool keyDownUpper[128] = {0};
+bool keyDownWhole[128] = {0}; // optional (whole mode convenience)
+
+bool holdManualLower = false;
+bool holdManualUpper = false;
+bool holdPedal = false;     // DP-2 pressed
+
+bool holdLatchedLower[128] = {0}; // notes sustaining because Hold caught their note-off
+bool holdLatchedUpper[128] = {0};
+
 // JP8 style patch handling
+
 bool jp8Mode = true;
 
 #define JP8_SELECT_ROW 0
