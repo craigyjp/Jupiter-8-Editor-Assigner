@@ -219,6 +219,10 @@ void setup() {
   usbMIDI.setHandlePitchChange(DinHandlePitchBend);
   usbMIDI.setHandleNoteOn(myNoteOn);
   usbMIDI.setHandleNoteOff(myNoteOff);
+  usbMIDI.setHandleClock(onMidiClockTick);
+  usbMIDI.setHandleStart(onMidiStart);
+  usbMIDI.setHandleStop(onMidiStop);
+  usbMIDI.setHandleContinue(onMidiContinue);
   Serial.println("USB Client MIDI Listening");
 
   //MIDI 5 Pin DIN
@@ -229,6 +233,10 @@ void setup() {
   MIDI.setHandlePitchBend(DinHandlePitchBend);
   MIDI.setHandleNoteOn(myNoteOn);
   MIDI.setHandleNoteOff(myNoteOff);
+  MIDI.setHandleClock(onMidiClockTick);
+  MIDI.setHandleStart(onMidiStart);
+  MIDI.setHandleStop(onMidiStop);
+  MIDI.setHandleContinue(onMidiContinue);
   MIDI.turnThruOn(midi::Thru::Mode::Off);
   Serial.println("MIDI In DIN Listening");
 
@@ -570,23 +578,23 @@ void onArpExternalClockPulse() {
   arpClkTickCount++;
 }
 
-void onMidiClockTick() {
-  if (arpClockSrc != ARPCLK_MIDI) return;
-  arpClkTickCount++;
-}
-
 bool arpShouldStepNow() {
 
   if (arpClockSrc == ARPCLK_INTERNAL) {
-    return arpShouldStepNow_InternalSmooth();
+    return arpShouldStepNow_InternalSmooth();  // your existing smooth internal
   }
 
-  // External / MIDI (unchanged)
+  if (arpClockSrc == ARPCLK_MIDI) {
+    if (!midiClockRunning) return false;       // wait for Start/Continue
+  }
+
   if (arpTicksPerStep == 0) arpTicksPerStep = 1;
+
   if (arpClkTickCount >= arpTicksPerStep) {
     arpClkTickCount = 0;
     return true;
   }
+
   return false;
 }
 
@@ -635,6 +643,48 @@ inline void setArpMode(ArpMode m) {
   updateArpLEDs();
 }
 
+inline void updateArpTicksPerStepFromDiv() {
+  switch (arpMidiDivSW) {
+    case 0:  arpTicksPerStep = 12; break; // 8th
+    case 1:  arpTicksPerStep = 8;  break; // 8th triplet
+    default: arpTicksPerStep = 6;  break; // 16th
+  }
+}
+
+void onMidiClockTick() {
+  if (arpClockSrc != ARPCLK_MIDI) return;
+  if (!midiClockRunning) return;          // only step after Start/Continue
+
+  arpClkTickCount++;
+}
+
+void onMidiStart() {
+  midiClockRunning = true;
+  arpClkTickCount = 0;
+
+  // Reset arp transport phase (JP-8-ish)
+  arpPos = -1;
+  arpDir = +1;
+
+  // If a note is currently sounding, stop it so first step is clean
+  if (arpNoteActive) arpStopCurrent();
+}
+
+void onMidiStop() {
+  midiClockRunning = false;
+  arpClkTickCount = 0;
+
+  // Stop current arp note and suspend stepping
+  if (arpNoteActive) arpStopCurrent();
+}
+
+void onMidiContinue() {
+  midiClockRunning = true;
+  // Do NOT clear pattern; do NOT reset arpPos unless you want "restart"
+  // Keep tick count as-is or zero it; JP-8 behavior is less defined here.
+  // I recommend leaving it as-is for continuity.
+}
+
 inline void toggleArpMode(ArpMode m) {
   if (arpMode == m) setArpMode(ARP_OFF);
   else setArpMode(m);
@@ -677,16 +727,28 @@ inline void updateArpLEDs() {
 inline void updateArpClockLEDs() {
   switch (arpClockSrc) {
     case ARPCLK_INTERNAL:
+      midiClockRunning = false;   // optional; avoids stale running state
+      arpClkTickCount = 0;
+      showCurrentParameterPage("Arp Clock", "Internal");
+      startParameterDisplay();
       mcp2.digitalWrite(ARP_CLK_LED_RED, LOW);
       mcp2.digitalWrite(ARP_CLK_LED_GRN, LOW);
       break;
 
     case ARPCLK_EXTERNAL:
+      midiClockRunning = false;   // optional; avoids stale running state
+      arpClkTickCount = 0;
+      showCurrentParameterPage("Arp Clock", "External");
+      startParameterDisplay();
       mcp2.digitalWrite(ARP_CLK_LED_RED, HIGH);
       mcp2.digitalWrite(ARP_CLK_LED_GRN, LOW);
       break;
 
     case ARPCLK_MIDI:
+      arpClkTickCount = 0;
+      updateArpTicksPerStepFromDiv();
+      showCurrentParameterPage("Arp Clock", "MIDI Clock");
+      startParameterDisplay();
       mcp2.digitalWrite(ARP_CLK_LED_RED, LOW);
       mcp2.digitalWrite(ARP_CLK_LED_GRN, HIGH);
       break;

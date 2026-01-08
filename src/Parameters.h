@@ -35,8 +35,12 @@ volatile ArpMidiDiv arpMidiDiv = ARP_DIV_16TH;
 extern uint8_t arpRate;
 
 // External / MIDI clock step accumulator
-volatile uint8_t arpClkTickCount = 0;     // counts pulses/ticks until a step
+volatile uint16_t arpClkTickCount = 0;     // counts pulses/ticks until a step
 volatile uint8_t arpTicksPerStep = 6;     // default: 16th @ MIDI clock (24ppqn -> 6 ticks)
+bool midiClockRunning = false;          // true after Start/Continue, false after Stop
+// 0 = 8th, 1 = 8th triplet, 2 = 16th
+uint8_t arpMidiDivSW = 2; // pick your default
+
 volatile ArpMode arpMode = ARP_OFF;
 volatile uint8_t arpRange = 4;         // 1..4 octaves
 volatile uint16_t arpStepMs = 125;      // step interval in ms (internal clock)
@@ -78,7 +82,6 @@ bool arpEverEnabledSinceBoot = false;
 uint8_t savedLowerKBMode = 0;
 uint8_t savedUpperKBMode = 0;
 bool arpForcedPoly2 = false;
-
 
 // JP8 style patch handling
 
