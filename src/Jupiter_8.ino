@@ -17,27 +17,25 @@
 
 std::map<int, int> voiceAssignment;
 
-#define PARAMETER 0      //The main page for displaying the current patch and control (parameter) changes
-#define RECALL 1         //Patches list
-#define SAVE 2           //Save patch page
-#define REINITIALISE 3   // Reinitialise message
-#define PATCH 4          // Show current patch bypassing PARAMETER
-#define PATCHNAMING 5    // Patch naming page
-#define DELETE 6         //Delete patch page
-#define DELETEMSG 7      //Delete patch message page
-#define SETTINGS 8       //Settings page
-#define SETTINGSVALUE 9  //Settings page
-#define PERFORMANCE_RECALL 10
-#define PERFORMANCE_SAVE 11
-#define PERFORMANCE_EDIT 12
-#define PERFORMANCE_NAMING 13
-#define PERFORMANCE_DELETE 14
-#define PERFORMANCE_DELETEMSG 15
-#define JP8_RECALL_SELECT 16
-#define JP8_STORE_SELECT 17
+// ---------- UI State ----------
+enum UiState : uint8_t {
+  PARAMETER = 0,
 
+  REINITIALISE = 3,
+  PATCH = 4,
+  PATCHNAMING = 5,
 
-unsigned int state = PARAMETER;
+  SETTINGS = 8,
+  SETTINGSVALUE = 9,
+
+  PERFORMANCE_SAVE = 11,
+  PERFORMANCE_NAMING = 13,
+
+  JP8_RECALL_SELECT = 16,
+  JP8_STORE_SELECT = 17
+};
+
+UiState state = PARAMETER;
 
 enum PlayMode {
   WHOLE = 0,
@@ -46,11 +44,24 @@ enum PlayMode {
 };
 
 struct Performance {
-  int performanceNo;
-  int upperPatchNo;
-  int lowerPatchNo;
-  String name;
-  PlayMode mode;  // ← Back to enum type!
+  uint8_t performanceNo = 11;
+  uint8_t upperPatchNo = 11;
+  uint8_t lowerPatchNo = 11;
+  String name = "InitPerf";
+  PlayMode mode = WHOLE;
+
+  uint8_t splitPoint = PERF_DEFAULT_SPLIT_POINT; // 0..24
+  uint8_t splitTrans = PERF_DEFAULT_SPLIT_TRANS; // 0..4
+
+  uint8_t upperVol = PERF_DEFAULT_VOL;           // 0..127
+  uint8_t lowerVol = PERF_DEFAULT_VOL;           // 0..127
+  uint8_t upperBal = 63;                         // 0..127 (center ~63/64)
+  uint8_t lowerBal = 63;                         // 0..127
+
+  uint8_t arpRangeSW = 0;
+  uint8_t arpModeSW  = 0;
+  uint8_t arpRate    = 0;
+  uint8_t arpClockSrc = 0;
 };
 
 #include "ST7735Display.h"
@@ -164,32 +175,11 @@ void setup() {
     voiceToNoteUpper[i] = -1;
   }
 
-
   cardStatus = SD.begin(BUILTIN_SDCARD);
   if (cardStatus) {
     Serial.println("SD card is connected");
-    loadPatches();
-    if (patches.size() == 0) {
-      //save an initialised patch to SD card
-      savePatch("1", INITPATCH);
-      if (!jp8Mode) {
-        loadPatches();
-        // sortPatches();
-        // renumberPatchesOnSD();
-      }
-    }
-    loadPerformances();
-    if (performances.size() == 0 && patches.size() > 0) {
-      Performance defaultPerf = {
-        1,
-        patches.first().patchNo,
-        patches.first().patchNo,
-        "Default"
-      };
-      performances.push(defaultPerf);
-      savePerformance("perf001", defaultPerf);
-      loadPerformances();  // reload to ensure it's in the buffer
-    }
+    ensureJP8BankInitialized();
+    ensureJP8PerformanceBankInitialized();
   } else {
     Serial.println("SD card is not connected or unusable");
     manualMode = true;
@@ -263,7 +253,6 @@ void setup() {
 
   delay(400);
 
-  ensureJP8BankInitialized();
 
   updateArpLEDs();
   patchNoU = 11;
@@ -585,7 +574,7 @@ bool arpShouldStepNow() {
   }
 
   if (arpClockSrc == ARPCLK_MIDI) {
-    if (!midiClockRunning) return false;       // wait for Start/Continue
+    if (!midiClockRunning) return false;  // wait for Start/Continue
   }
 
   if (arpTicksPerStep == 0) arpTicksPerStep = 1;
@@ -624,8 +613,8 @@ inline void setArpMode(ArpMode m) {
   // If we are turning arp ON (OFF -> something)
   if (wasOff && !nowOff) {
 
-    arpRange = lastArpRange;           // already preloaded by patch recall
-    arpEverEnabledSinceBoot = true;    // mark as used
+    arpRange = lastArpRange;         // already preloaded by patch recall
+    arpEverEnabledSinceBoot = true;  // mark as used
 
     arpForcePoly2On();
   }
@@ -645,15 +634,15 @@ inline void setArpMode(ArpMode m) {
 
 inline void updateArpTicksPerStepFromDiv() {
   switch (arpMidiDivSW) {
-    case 0:  arpTicksPerStep = 12; break; // 8th
-    case 1:  arpTicksPerStep = 8;  break; // 8th triplet
-    default: arpTicksPerStep = 6;  break; // 16th
+    case 0: arpTicksPerStep = 12; break;  // 8th
+    case 1: arpTicksPerStep = 8; break;   // 8th triplet
+    default: arpTicksPerStep = 6; break;  // 16th
   }
 }
 
 void onMidiClockTick() {
   if (arpClockSrc != ARPCLK_MIDI) return;
-  if (!midiClockRunning) return;          // only step after Start/Continue
+  if (!midiClockRunning) return;  // only step after Start/Continue
 
   arpClkTickCount++;
 }
@@ -727,7 +716,7 @@ inline void updateArpLEDs() {
 inline void updateArpClockLEDs() {
   switch (arpClockSrc) {
     case ARPCLK_INTERNAL:
-      midiClockRunning = false;   // optional; avoids stale running state
+      midiClockRunning = false;  // optional; avoids stale running state
       arpClkTickCount = 0;
       showCurrentParameterPage("Arp Clock", "Internal");
       startParameterDisplay();
@@ -736,7 +725,7 @@ inline void updateArpClockLEDs() {
       break;
 
     case ARPCLK_EXTERNAL:
-      midiClockRunning = false;   // optional; avoids stale running state
+      midiClockRunning = false;  // optional; avoids stale running state
       arpClkTickCount = 0;
       showCurrentParameterPage("Arp Clock", "External");
       startParameterDisplay();
@@ -764,7 +753,7 @@ inline float arpHzFromValue(uint8_t v) {
 
 inline uint16_t arpStepMsFromRate(uint8_t v) {
   float hz = arpHzFromValue(v);
-  return (uint16_t)(1000.0f / hz + 0.5f);    // rounded ms per step
+  return (uint16_t)(1000.0f / hz + 0.5f);  // rounded ms per step
 }
 
 inline void setArpClockSrc(ArpClockSrc src) {
@@ -838,10 +827,10 @@ inline void arpUpdateSmoothHz() {
   arpLastSmoothUs = now;
 
   // Time constant (seconds). Larger = smoother/slower response.
-  const float tau = 0.20f; // 200ms is a good starting point
+  const float tau = 0.20f;  // 200ms is a good starting point
 
   // One-pole coefficient based on dt
-  float a = dt / (tau + dt);           // stable even if dt varies
+  float a = dt / (tau + dt);  // stable even if dt varies
   arpHzSmooth += (arpHzTarget - arpHzSmooth) * a;
 
   // Safety clamp
@@ -857,7 +846,7 @@ inline bool arpShouldStepNow_InternalSmooth() {
   if (arpNextStepUs == 0) {
     // initialize on first run
     arpNextStepUs = now;
-    return true; // step immediately on start (optional; remove if you don't want immediate)
+    return true;  // step immediately on start (optional; remove if you don't want immediate)
   }
 
   // time until next step elapsed?
@@ -890,25 +879,25 @@ inline ArpMode patchToArpMode(uint8_t v) {
 
 inline uint8_t arpModeToPatch(ArpMode m) {
   switch (m) {
-    case ARP_UP:     return 1;
-    case ARP_DOWN:   return 2;
+    case ARP_UP: return 1;
+    case ARP_DOWN: return 2;
     case ARP_UPDOWN: return 3;
     case ARP_RANDOM: return 4;
-    default:         return 0;
+    default: return 0;
   }
 }
 
 inline uint8_t patchToArpRange(uint8_t v) {
   // Accept either 0..3 or 1..4
-  if (v <= 3) return v + 1;          // 0..3 -> 1..4
-  if (v >= 1 && v <= 4) return v;    // 1..4 -> 1..4
+  if (v <= 3) return v + 1;        // 0..3 -> 1..4
+  if (v >= 1 && v <= 4) return v;  // 1..4 -> 1..4
   return 4;
 }
 
 inline uint8_t arpRangeToPatch(uint8_t r) {
   if (r < 1) r = 1;
   if (r > 4) r = 4;
-  return (uint8_t)(r - 1);           // store 0..3
+  return (uint8_t)(r - 1);  // store 0..3
 }
 
 
@@ -917,7 +906,7 @@ void updateArpRange(boolean announce) {
   uint8_t r = patchToArpRange(lowerData[P_arpRangeSW]);
 
   arpRange = r;
-  lastArpRange = r;    // so next ARP enable recalls the stored range
+  lastArpRange = r;  // so next ARP enable recalls the stored range
 
   // Optional: restart unfolding when range changes
   arpPos = -1;
@@ -943,11 +932,11 @@ void updateArpMode(boolean announce) {
   setArpMode(m);
 
   if (announce && !suppressParamAnnounce) {
-    const char* name =
-      (m == ARP_UP)     ? "Up" :
-      (m == ARP_DOWN)   ? "Down" :
-      (m == ARP_UPDOWN) ? "UpDown" :
-      (m == ARP_RANDOM) ? "Random" : "Off";
+    const char *name =
+      (m == ARP_UP) ? "Up" : (m == ARP_DOWN)   ? "Down"
+                           : (m == ARP_UPDOWN) ? "UpDown"
+                           : (m == ARP_RANDOM) ? "Random"
+                                               : "Off";
 
     showCurrentParameterPage("Arp Mode", String(name));
     startParameterDisplay();
@@ -1154,69 +1143,112 @@ inline void updateHoldLEDs() {
 
 // Patch creation in jupiter 8 style
 
-static inline uint8_t &activeSlotRC() {
+inline String perfPathFromRC(uint8_t rc) {
+  return String("/performances/perf") + String(rc);  // "/performances/perf11"
+}
+
+inline const char *patchNameOrInit(uint8_t rc) {
+  String slotName = getPatchName(rc);
+  if (slotName.length() == 0) slotName = INITPATCHNAME;
+  // WARNING: returning c_str() of a temporary is unsafe.
+  // So do NOT use this helper to return const char*.
+  return nullptr;
+}
+
+// ---------- JP-8 helpers ----------
+static inline uint8_t activeSlotRC() {
   return upperSW ? upperSlotRC : lowerSlotRC;
 }
 
 static inline bool jp8_isValidRC(uint8_t rc) {
-  uint8_t r = rc / 10;
-  uint8_t c = rc % 10;
+  const uint8_t r = rc / 10;
+  const uint8_t c = rc % 10;
   return (r >= 1 && r <= 8 && c >= 1 && c <= 8);
 }
 
-void handleJp8Digit(uint8_t digit) {  // 1..8
-  if (!jp8Mode) return;
-  if (digit < 1 || digit > 8) return;
+inline bool jp8_isValidDigit(uint8_t d) {
+  return d >= 1 && d <= 8;
+}
 
-  bool allow =
-    (state == JP8_STORE_SELECT) || (state == PARAMETER && !inPerformanceMode);
+void handleJp8PatchDigit(uint8_t digit) {
+  if (!jp8Mode) return;
+  if (!jp8_isValidDigit(digit)) return;
+
+  // Allow patch digits in:
+  // - JP8_STORE_SELECT (patch save destination select)
+  // - PATCHNAMING when naming-from-store (change destination)
+  // - PARAMETER (both patch mode and performance mode)
+  const bool allow =
+      (state == JP8_STORE_SELECT) ||
+      (state == PATCHNAMING && jp8NamingFromStore) ||
+      (state == PARAMETER);
 
   if (!allow) return;
 
+  // First digit selects row
   if (jp8DigitState == JP8_SELECT_ROW) {
     jp8Row = digit;
     jp8DigitState = JP8_SELECT_COL;
-
-    jp8DigitTimer = 0;  // <-- ADD THIS LINE
-
-    updateScreen();  // optional
-    return;
-  }
-
-  // second digit
-  jp8Col = digit;
-  jp8DigitState = JP8_SELECT_ROW;
-
-  jp8ForceRowLedOff();  // immediate extinguish of first-digit LED
-
-  uint8_t rc = (uint8_t)(jp8Row * 10 + jp8Col);  // 11..88
-  if (!jp8_isValidRC(rc)) return;
-
-  activeSlotRC() = rc;
-
-  // If we are in STORE select -> overwrite store
-  if (state == JP8_STORE_SELECT) {
-    String patchData = getCurrentPatchData();
-    savePatch(String(rc).c_str(), patchData);
-
-    if (upperSW) currentPgmNumU = String(rc);
-    else currentPgmNumL = String(rc);
-
-    refreshPatchDisplayFromState();
-    state = PARAMETER;
+    jp8DigitSource = JP8_SRC_PATCH;
+    jp8DigitTimer = 0;
     updateScreen();
     return;
   }
 
-  // Otherwise (PARAMETER patch mode) -> immediate recall
+  // Second digit selects col
+  jp8Col = digit;
+  jp8DigitState = JP8_SELECT_ROW;
+
+  jp8ForceRowLedOff();
+  jp8DigitSource = JP8_SRC_NONE;
+
+  const uint8_t rc = (uint8_t)(jp8Row * 10 + jp8Col);
+  if (!jp8_isValidRC(rc)) return;
+
+  // While naming-from-store: digits change patch SAVE destination only
+  if (state == PATCHNAMING && jp8NamingFromStore) {
+    jp8StoreTargetRC = rc;
+    showRenamingPage(renamedPatch);
+    updateScreen();
+    return;
+  }
+
+  // While patch store-select: digits choose patch SAVE destination only
+  if (state == JP8_STORE_SELECT) {
+    jp8StoreTargetRC = rc;
+    updateScreen();
+    return;
+  }
+
+  // PARAMETER: patch digits recall a patch.
+  // In performance mode: also update the current performance’s upper/lower patch assignment.
   exitManualModeIfActive();
+
+  if (inPerformanceMode) {
+    if (upperSW) currentPerformance.upperPatchNo = rc;
+    else currentPerformance.lowerPatchNo = rc;
+  }
+
   recallPatch(rc);
+
   refreshPatchDisplayFromState();
+
+  if (inPerformanceMode) {
+    showPerformancePage(
+      String((uint8_t)currentPerformance.performanceNo),
+      currentPerformance.name,
+      currentPerformance.upperPatchNo,
+      getPatchName(currentPerformance.upperPatchNo),
+      currentPerformance.lowerPatchNo,
+      getPatchName(currentPerformance.lowerPatchNo)
+    );
+  }
+
   updateScreen();
 }
 
+
 void ensureJP8BankInitialized() {
-  if (!jp8Mode) return;
 
   for (uint8_t r = 1; r <= 8; r++) {
     for (uint8_t c = 1; c <= 8; c++) {
@@ -1231,6 +1263,60 @@ void ensureJP8BankInitialized() {
   }
 }
 
+void ensureJP8PerformanceBankInitialized() {
+  if (!SD.exists("/performances")) {
+    SD.mkdir("/performances");
+  }
+
+  Performance defaultPerf;
+  defaultPerf.performanceNo = 11;   // overwritten per slot
+  defaultPerf.upperPatchNo = 11;
+  defaultPerf.lowerPatchNo = 11;
+  defaultPerf.name = "InitPerf";
+  defaultPerf.mode = WHOLE;
+
+  // NEW defaults (match your ranges)
+  defaultPerf.splitPoint = 12;      // 0..24
+  defaultPerf.splitTrans = 0;       // 0..4
+  defaultPerf.upperVol = 127;       // 0..127
+  defaultPerf.lowerVol = 127;       // 0..127
+  defaultPerf.upperBal = 0;         // -63..+63
+  defaultPerf.lowerBal = 0;         // -63..+63
+
+  defaultPerf.arpRangeSW = 0;
+  defaultPerf.arpModeSW = 0;
+  defaultPerf.arpRate = 0;
+  defaultPerf.arpClockSrc = ARPCLK_INTERNAL;
+
+  for (uint8_t r = 1; r <= 8; r++) {
+    for (uint8_t c = 1; c <= 8; c++) {
+      const uint8_t rc = (uint8_t)(r * 10 + c);
+      if (!jp8_isValidRC(rc)) continue;
+
+      const String path = perfPathFromRC(rc);
+
+      if (!SD.exists(path.c_str())) {
+        Performance p = defaultPerf;
+        p.performanceNo = rc;
+        p.name = "perf" + String(rc);
+        savePerformanceRC(rc, p);
+      }
+    }
+  }
+}
+
+static inline void perfLedWriteDigit(uint8_t digit, bool on) {
+  if (digit < 1 || digit > 8) return;
+  const LedRef &led = JP8_PERF_ROW_LED[digit - 1];
+  led.mcp->digitalWrite(led.pin, on ? LED_ON : LED_OFF);
+}
+
+static inline void perfClearRowLeds() {
+  for (int i = 0; i < 8; i++) {
+    JP8_PERF_ROW_LED[i].mcp->digitalWrite(JP8_PERF_ROW_LED[i].pin, LED_OFF);
+  }
+}
+
 void jp8UpdateFirstDigitLed() {
   if (!jp8Mode) return;
 
@@ -1239,13 +1325,19 @@ void jp8UpdateFirstDigitLed() {
 
   const bool waitingForCol = (jp8DigitState == JP8_SELECT_COL);
 
+  // Leaving wait-for-col → turn off whichever LED was blinking
   if (wasWaitingForCol && !waitingForCol) {
-    uint8_t d = jp8Row;  // 1..8
+    uint8_t d = jp8Row;
     if (d >= 1 && d <= 8) {
-      mcp5.digitalWrite(VOICE_LED_PIN[d - 1], LED_OFF);
+      if (jp8DigitSource == JP8_SRC_PATCH) {
+        mcp5.digitalWrite(VOICE_LED_PIN[d - 1], LED_OFF);
+      } else if (jp8DigitSource == JP8_SRC_PERF) {
+        perfLedWriteDigit(d, false);
+      }
     }
     blinkState = false;
     jp8BlinkTimer = 0;
+    jp8DigitSource = JP8_SRC_NONE;
   }
 
   if (!waitingForCol) {
@@ -1259,7 +1351,12 @@ void jp8UpdateFirstDigitLed() {
   if (jp8BlinkTimer >= JP8_BLINK_MS) {
     jp8BlinkTimer = 0;
     blinkState = !blinkState;
-    mcp5.digitalWrite(VOICE_LED_PIN[d - 1], blinkState ? LED_ON : LED_OFF);
+
+    if (jp8DigitSource == JP8_SRC_PATCH) {
+      mcp5.digitalWrite(VOICE_LED_PIN[d - 1], blinkState ? LED_ON : LED_OFF);
+    } else if (jp8DigitSource == JP8_SRC_PERF) {
+      perfLedWriteDigit(d, blinkState);
+    }
   }
 
   wasWaitingForCol = true;
@@ -1277,6 +1374,97 @@ inline void exitManualModeIfActive() {
 
   manualMode = false;
   mcp7.digitalWrite(MANUAL_LED, LOW);  // assuming HIGH = on, LOW = off
+}
+
+// ---- CSV helpers ----
+static inline String sanitizeCsvField(String s) {
+  s.replace(',', ';');
+  s.replace('\n', ' ');
+  s.replace('\r', ' ');
+  return s;
+}
+
+static String csvGetField(const String &line, int fieldIndex) {
+  int start = 0;
+  int end = -1;
+
+  for (int i = 0; i <= fieldIndex; i++) {
+    start = (i == 0) ? 0 : (end + 1);
+    if (start <= 0 && i != 0) return "";
+
+    end = line.indexOf(',', start);
+    if (end < 0) {
+      if (i == fieldIndex) return line.substring(start);
+      return "";
+    }
+    if (i == fieldIndex) return line.substring(start, end);
+  }
+  return "";
+}
+
+static inline int clampInt(int v, int lo, int hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+// Engine representation: 0..127
+// Conceptual balance: -63..+63 (stored in Performance as int8_t)
+static inline int8_t decodeBalance0_127_to_m63_p63(int v0_127) {
+  v0_127 = clampInt(v0_127, 0, 127);
+  int b = v0_127 - 63;          // 0->-63, 63->0, 126->+63, 127->+64 (clamped below)
+  b = clampInt(b, -63, 63);
+  return (int8_t)b;
+}
+
+static inline uint8_t encodeBalance_m63_p63_to_0_127(int8_t b_m63_p63) {
+  int b = clampInt((int)b_m63_p63, -63, 63);
+  int v = b + 63;               // -63->0, 0->63, +63->126
+  v = clampInt(v, 0, 127);
+  return (uint8_t)v;
+}
+
+static inline uint8_t clampU8(long v, uint8_t lo, uint8_t hi, uint8_t def) {
+  if (v < lo || v > hi) return def;
+  return (uint8_t)v;
+}
+
+static inline void capturePerformanceExtrasFromEngine(Performance &p) {
+  p.splitPoint = clampU8(splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT);
+  p.splitTrans = clampU8(splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS);
+
+  p.upperVol = clampU8(upperData[P_volume], 0, 127, PERF_DEFAULT_VOL);
+  p.lowerVol = clampU8(lowerData[P_volume], 0, 127, PERF_DEFAULT_VOL);
+
+  p.upperBal = clampU8(upperData[P_balance], 0, 127, 63);
+  p.lowerBal = clampU8(lowerData[P_balance], 0, 127, 63);
+
+  p.arpRangeSW  = clampU8(lowerData[P_arpRangeSW], 0, 127, 0);
+  p.arpModeSW   = clampU8(lowerData[P_arpModeSW],  0, 127, 0);
+  p.arpRate     = clampU8(lowerData[P_arpRate],    0, 127, 0);
+  p.arpClockSrc = (uint8_t)arpClockSrc;
+}
+
+static inline void applyPerformanceExtrasToEngine(const Performance &p) {
+  splitPoint = clampU8(p.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT);
+  splitTrans = clampU8(p.splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS);
+
+  upperData[P_volume] = clampU8(p.upperVol, 0, 127, PERF_DEFAULT_VOL);
+  lowerData[P_volume] = clampU8(p.lowerVol, 0, 127, PERF_DEFAULT_VOL);
+
+  upperData[P_balance] = clampU8(p.upperBal, 0, 127, 63);
+  lowerData[P_balance] = clampU8(p.lowerBal, 0, 127, 63);
+
+  lowerData[P_arpRangeSW] = p.arpRangeSW;
+  lowerData[P_arpModeSW]  = p.arpModeSW;
+  lowerData[P_arpRate]    = p.arpRate;
+  uint8_t src = clampU8(p.arpClockSrc, 0, 2, (uint8_t)ARPCLK_INTERNAL);
+  arpClockSrc = (ArpClockSrc)src;
+
+  updatearpRate(0);
+  updateArpRange(0);
+  updateArpMode(0);
+
 }
 
 // Handling encoders and buttons
@@ -1411,51 +1599,51 @@ void mainButtonChanged(Button *btn, bool released) {
       break;
 
     case ARP_MODE_UP_BUTTON:
-      if (!released) 
+      if (!released)
         toggleArpMode(ARP_UP);
-        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
       break;
 
     case ARP_MODE_DOWN_BUTTON:
-      if (!released) 
+      if (!released)
         toggleArpMode(ARP_DOWN);
-        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
       break;
 
     case ARP_MODE_UP_DOWN_BUTTON:
-      if (!released) 
+      if (!released)
         toggleArpMode(ARP_UPDOWN);
-        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
       break;
 
     case ARP_MODE_RANDOM_BUTTON:
-      if (!released) 
+      if (!released)
         toggleArpMode(ARP_RANDOM);
-        lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
+      lowerData[P_arpModeSW] = arpModeToPatch(arpMode);
       break;
 
     case ARP_RANGE1_BUTTON:
-      if (!released) 
+      if (!released)
         setArpRange(1);
-        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
       break;
 
     case ARP_RANGE2_BUTTON:
-      if (!released) 
+      if (!released)
         setArpRange(2);
-        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
       break;
 
     case ARP_RANGE3_BUTTON:
-      if (!released) 
+      if (!released)
         setArpRange(3);
-        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
       break;
 
     case ARP_RANGE4_BUTTON:
-      if (!released) 
+      if (!released)
         setArpRange(4);
-        lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
+      lowerData[P_arpRangeSW] = arpRangeToPatch(arpRange);
       break;
 
     case MANUAL_BUTTON:
@@ -1555,80 +1743,105 @@ void mainButtonChanged(Button *btn, bool released) {
 
     case PATCH1_BUTTON:
       if (!released) {
-        handleJp8Digit(1);
+        handleJp8PatchDigit(1);
       }
       break;
 
     case PATCH2_BUTTON:
       if (!released) {
-        handleJp8Digit(2);
+        handleJp8PatchDigit(2);
       }
       break;
 
     case PATCH3_BUTTON:
       if (!released) {
-        handleJp8Digit(3);
+        handleJp8PatchDigit(3);
       }
       break;
 
     case PATCH4_BUTTON:
       if (!released) {
-        handleJp8Digit(4);
+        handleJp8PatchDigit(4);
       }
       break;
 
     case PATCH5_BUTTON:
       if (!released) {
-        handleJp8Digit(5);
+        handleJp8PatchDigit(5);
       }
       break;
 
     case PATCH6_BUTTON:
       if (!released) {
-        handleJp8Digit(6);
+        handleJp8PatchDigit(6);
       }
       break;
 
     case PATCH7_BUTTON:
       if (!released) {
-        handleJp8Digit(7);
+        handleJp8PatchDigit(7);
       }
       break;
 
     case PATCH8_BUTTON:
       if (!released) {
-        handleJp8Digit(8);
+        handleJp8PatchDigit(8);
+      }
+      break;
+
+    case PRESET1_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(1);
+      }
+      break;
+
+    case PRESET2_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(2);
+      }
+      break;
+
+    case PRESET3_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(3);
+      }
+      break;
+
+    case PRESET4_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(4);
+      }
+      break;
+
+    case PRESET5_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(5);
+      }
+      break;
+
+    case PRESET6_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(6);
+      }
+      break;
+
+    case PRESET7_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(7);
+      }
+      break;
+
+    case PRESET8_BUTTON:
+      if (!released) {
+        handleJp8PresetDigit(8);
       }
       break;
   }
 }
 
-void recallPerformance(const Performance &perf) {
-  currentPerformance = perf;
-  playMode = perf.mode;
-
-  switch (playMode) {
-    case WHOLE:
-      recallPatch(perf.lowerPatchNo);
-      patchNo = perf.lowerPatchNo;
-      refreshPatchDisplayFromState();
-      break;
-    case DUAL:
-    case SPLIT:
-      recallPatch(perf.upperPatchNo);
-      recallPatch(perf.lowerPatchNo);
-      patchNo = perf.lowerPatchNo;
-      refreshPatchDisplayFromState();
-      break;
-  }
-}
-
-void refreshPatchDisplayFromState() {
-  showPatchPage(
-    currentPgmNumU,
-    currentPatchNameU,
-    currentPgmNumL,
-    currentPatchNameL);
+// ---------- Pure UI refresh ----------
+inline void refreshPatchDisplayFromState() {
+  showPatchPage(currentPgmNumU, currentPatchNameU, currentPgmNumL, currentPatchNameL);
 }
 
 String getModeName(PlayMode mode) {
@@ -1640,73 +1853,256 @@ String getModeName(PlayMode mode) {
   }
 }
 
+// ---------- Performance file helpers ----------
 
-void loadPerformances() {
-  performances.clear();
-  File dir = SD.open("/performances");
+void savePerformanceRC(uint8_t rc, const Performance &perfIn) {
+  const String path = perfPathFromRC(rc);
 
-  if (!dir || !dir.isDirectory()) {
-    Serial.println("/performances not found or is not a directory");
+  if (SD.exists(path.c_str())) SD.remove(path.c_str());
+  File file = SD.open(path.c_str(), FILE_WRITE);
+  if (!file) {
+    Serial.print("Failed to save performance: ");
+    Serial.println(path);
     return;
   }
 
-  while (true) {
-    File file = dir.openNextFile();
-    if (!file) break;
+  Performance perf = perfIn;
+  perf.performanceNo = rc;
 
-    if (file.isDirectory()) {
-      file.close();
-      continue;
-    }
+  if (perf.name.length() == 0) perf.name = "InitPerf";
+  perf.name = sanitizeCsvField(perf.name);
 
-    String dataLine = file.readStringUntil('\n');
-    file.close();
+  // v2: v2,upper,lower,name,mode,splitPoint,splitTrans,upperVol,lowerVol,upperBal,lowerBal,arpRangeSW,arpModeSW,arpRate,arpClockSrc
+  file.print("v2,");
 
-    if (dataLine.length() > 0) {
-      int comma1 = dataLine.indexOf(',');
-      int comma2 = dataLine.indexOf(',', comma1 + 1);
-      int comma3 = dataLine.indexOf(',', comma2 + 1);
+  file.print((int)perf.upperPatchNo); file.print(",");
+  file.print((int)perf.lowerPatchNo); file.print(",");
+  file.print(perf.name);             file.print(",");
+  file.print((int)perf.mode);        file.print(",");
 
-      if (comma1 == -1 || comma2 == -1 || comma3 == -1) continue;
+  file.print((int)clampU8(perf.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT)); file.print(",");
+  file.print((int)clampU8(perf.splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS)); file.print(",");
 
-      int upper = dataLine.substring(0, comma1).toInt();
-      int lower = dataLine.substring(comma1 + 1, comma2).toInt();
-      String name = dataLine.substring(comma2 + 1, comma3);
-      int mode = dataLine.substring(comma3 + 1).toInt();
+  file.print((int)clampU8(perf.upperVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
+  file.print((int)clampU8(perf.lowerVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
 
-      int perfNo = performances.size() + 1;
-      performances.push({ perfNo, upper, lower, name, (PlayMode)mode });
-    }
-  }
+  file.print((int)clampU8(perf.upperBal, 0, 127, 63)); file.print(",");
+  file.print((int)clampU8(perf.lowerBal, 0, 127, 63)); file.print(",");
 
-  if (performances.size() == 0) {
-    Performance defaultPerf = { 1, 1, 1, "Default", WHOLE };
-    savePerformance("perf001", defaultPerf);
-    loadPerformances();  // try again
-  }
+  file.print((int)clampU8(perf.arpRangeSW, 0, 127, 0)); file.print(",");
+  file.print((int)clampU8(perf.arpModeSW,  0, 127, 0)); file.print(",");
+  file.print((int)clampU8(perf.arpRate,    0, 127, 0)); file.print(",");
+  file.println((int)clampU8(perf.arpClockSrc, 0, 2, (uint8_t)ARPCLK_INTERNAL));
+
+  file.close();
 }
 
-void savePerformance(const char *fileName, const Performance &perf) {
-  String path = "/performances/" + String(fileName);
+bool loadPerformanceRC(uint8_t rc, Performance &out) {
+  const String path = perfPathFromRC(rc);
+  File file = SD.open(path.c_str(), FILE_READ);
+  if (!file) return false;
 
-  if (SD.exists(path.c_str())) {
-    SD.remove(path.c_str());
+  String line = file.readStringUntil('\n');
+  file.close();
+
+  line.trim();
+  if (!line.length()) return false;
+
+  out = Performance();  // defaults
+  out.performanceNo = rc;
+
+  auto fieldOrEmpty = [&](int idx) -> String {
+    return csvGetField(line, idx);
+  };
+
+  // ---- v2 (allow missing trailing fields) ----
+  if (line.startsWith("v2,")) {
+    const String upperS = fieldOrEmpty(1);
+    const String lowerS = fieldOrEmpty(2);
+    const String nameS  = fieldOrEmpty(3);
+    const String modeS  = fieldOrEmpty(4);
+
+    if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
+
+    out.upperPatchNo = (uint8_t)upperS.toInt();
+    out.lowerPatchNo = (uint8_t)lowerS.toInt();
+    out.name = nameS;
+    out.mode = (PlayMode)modeS.toInt();
+
+    // Optional fields: only overwrite defaults if present
+    const String spS  = fieldOrEmpty(5);
+    const String stS  = fieldOrEmpty(6);
+    const String uvS  = fieldOrEmpty(7);
+    const String lvS  = fieldOrEmpty(8);
+    const String ubS  = fieldOrEmpty(9);
+    const String lbS  = fieldOrEmpty(10);
+    const String arS  = fieldOrEmpty(11);
+    const String amS  = fieldOrEmpty(12);
+    const String atS  = fieldOrEmpty(13);
+    const String acS  = fieldOrEmpty(14);
+
+    if (spS.length()) out.splitPoint = clampU8(spS.toInt(), 0, 24, PERF_DEFAULT_SPLIT_POINT);
+    if (stS.length()) out.splitTrans = clampU8(stS.toInt(), 0, 4,  PERF_DEFAULT_SPLIT_TRANS);
+
+    if (uvS.length()) out.upperVol = clampU8(uvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
+    if (lvS.length()) out.lowerVol = clampU8(lvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
+
+    if (ubS.length()) out.upperBal = clampU8(csvGetField(line, 9).toInt(),  0, 127, 63);
+    if (lbS.length()) out.lowerBal = clampU8(csvGetField(line, 9).toInt(),  0, 127, 63);
+
+    if (arS.length()) out.arpRangeSW  = clampU8(arS.toInt(), 0, 127, 0);
+    if (amS.length()) out.arpModeSW   = clampU8(amS.toInt(), 0, 127, 0);
+    if (atS.length()) out.arpRate     = clampU8(atS.toInt(), 0, 127, 0);
+    if (acS.length()) out.arpClockSrc = clampU8(csvGetField(line,14).toInt(), 0, 2, (uint8_t)ARPCLK_INTERNAL);
+
+    return true;
   }
 
-  File file = SD.open(path.c_str(), FILE_WRITE);
-  if (file) {
-    file.print(perf.upperPatchNo);
-    file.print(",");
-    file.print(perf.lowerPatchNo);
-    file.print(",");
-    file.print(perf.name);
-    file.print(",");
-    file.println((int)perf.mode);  // Save playMode as an integer (0, 1, 2)
-    file.close();
-  } else {
-    Serial.print("Failed to save performance: ");
-    Serial.println(path);
+  // ---- v1 legacy: upper,lower,name,mode ----
+  const String upperS = fieldOrEmpty(0);
+  const String lowerS = fieldOrEmpty(1);
+  const String nameS  = fieldOrEmpty(2);
+  const String modeS  = fieldOrEmpty(3);
+
+  if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
+
+  out.upperPatchNo = (uint8_t)upperS.toInt();
+  out.lowerPatchNo = (uint8_t)lowerS.toInt();
+  out.name = nameS;
+  out.mode = (PlayMode)modeS.toInt();
+
+  // Extras remain defaults
+  return true;
+}
+
+// ---- Use on save commits ----
+// Call capturePerformanceExtrasFromEngine(perfToSave) right before savePerformanceRC(...)
+static inline void saveCurrentPerformanceToRC(uint8_t rc, Performance perfToSave) {
+  perfToSave.performanceNo = rc;
+  capturePerformanceExtrasFromEngine(perfToSave);
+  savePerformanceRC(rc, perfToSave);
+}
+
+// ---- Use on recall ----
+// After loading p, apply extras (and then do your patch recalls/mode handling)
+static inline void applyPerformanceV2(const Performance &p) {
+  // Your existing applyPerformance(...) can call this early/late depending on how you push params.
+  applyPerformanceExtrasToEngine(p);
+}
+
+// ---------- Apply/Recall performance ----------
+
+void applyPerformance(const Performance &p) {
+
+  // Optional: keep indices if your UI uses them
+  for (int i = 0; i < patches.size(); i++) {
+    if (patches[i].patchNo == p.upperPatchNo) upperPatchIndex = i;
+    if (patches[i].patchNo == p.lowerPatchNo) lowerPatchIndex = i;
   }
+
+  playMode = p.mode;
+  wholemode = (playMode == WHOLE);
+  updateplayMode(0);
+
+  upperSW = true;
+  recallPatch(p.upperPatchNo);
+
+  upperSW = false;
+  recallPatch(p.lowerPatchNo);
+
+  refreshPatchDisplayFromState();
+
+  applyPerformanceExtrasToEngine(p);
+
+  patchNo = 0;  // keep your safety line
+
+  updateScreen();
+}
+
+void recallPerformanceRC(uint8_t rc) {
+  if (!jp8_isValidRC(rc)) return;
+
+  Performance p;
+  if (!loadPerformanceRC(rc, p)) {
+    Serial.print("Failed to load performance RC=");
+    Serial.println(rc);
+    return;
+  }
+
+  lastPerfRC = rc;  // track last recalled performance
+  currentPerformance = p;
+  currentPerformance.performanceNo = rc;  // enforce slot number
+
+  showPerformancePage(
+    String(currentPerformance.performanceNo),
+    currentPerformance.name,
+    currentPerformance.upperPatchNo,
+    getPatchName(currentPerformance.upperPatchNo),
+    currentPerformance.lowerPatchNo,
+    getPatchName(currentPerformance.lowerPatchNo));
+
+  applyPerformance(currentPerformance);
+}
+
+// ---------- COMPLETE PRESET digit handler ----------
+
+static inline void ledWrite(const LedRef &led, bool on) {
+  // Adjust polarity if your LEDs are active-low
+  led.mcp->digitalWrite(led.pin, on ? HIGH : LOW);
+}
+
+void handleJp8PresetDigit(uint8_t digit) {  // 1..8
+  if (!jp8PresetMode) return;
+  if (digit < 1 || digit > 8) return;
+
+  const bool allow =
+    (state == PERFORMANCE_SAVE) || (state == PERFORMANCE_NAMING && perfNamingFromStore) || (state == PARAMETER && inPerformanceMode);
+
+  if (!allow) return;
+
+  // First digit = row
+  if (jp8DigitState == JP8_SELECT_ROW) {
+    jp8Row = digit;
+    jp8DigitState = JP8_SELECT_COL;
+    jp8DigitSource = JP8_SRC_PERF;
+    jp8DigitTimer = 0;
+
+    perfClearRowLeds();
+    perfLedWriteDigit(digit, true);
+    updateScreen();
+    return;
+  }
+
+  // Second digit = col
+  jp8Col = digit;
+  jp8DigitState = JP8_SELECT_ROW;
+
+  perfClearRowLeds();
+  jp8DigitSource = JP8_SRC_NONE;
+
+  const uint8_t rc = (uint8_t)(jp8Row * 10 + jp8Col);
+  if (!jp8_isValidRC(rc)) return;
+
+  // Armed-save destination select (no write yet)
+  if (state == PERFORMANCE_SAVE) {
+    perfStoreTargetRC = rc;
+    syncPerformanceDisplayForTarget(perfStoreTargetRC);
+    updateScreen();
+    return;
+  }
+
+  // While naming-from-store: digits change destination only
+  if (state == PERFORMANCE_NAMING && perfNamingFromStore) {
+    perfStoreTargetRC = rc;
+    showRenamingPage(renamedPatch);
+    updateScreen();
+    return;
+  }
+
+  // Recall in performance mode
+  lastPerfRC = rc;
+  exitManualModeIfActive();
+  recallPerformanceRC(rc);
 }
 
 void editControlChange(byte channel, byte control, byte value) {
@@ -2839,11 +3235,9 @@ void updatearpRate(boolean announce) {
     startParameterDisplay();
   }
 
-  midiCCOut(CCarpRate, v);
+  arpHzTarget = arpHzFromValue(lowerData[P_arpRate]);
 
-  // if (arpClockSrc == ARPCLK_INTERNAL) arpLastStepMs = millis();
-  // else arpClkTickCount = 0;
-  // arpClkTickCount = 0;
+  midiCCOut(CCarpRate, v);
 }
 
 void updatevcoLfoModDepth(boolean announce) {
@@ -3066,30 +3460,18 @@ void updatevco2Range(boolean announce) {
 
   if (announce && !suppressParamAnnounce) {
     if (vco2WaveformDisplay < 3) {
-      switch (vco2RangeDisplay) {
-        case 0:
-          StratuslfoWaveform = "64 Foot";
-          break;
-
-        case 1:
-          StratuslfoWaveform = "32 Foot";
-          break;
-
-        case 2:
-          StratuslfoWaveform = "16 Foot";
-          break;
-
-        case 3:
-          StratuslfoWaveform = "8 Foot";
-          break;
-
-        case 4:
-          StratuslfoWaveform = "4 Foot";
-          break;
-
-        case 5:
-          StratuslfoWaveform = "2 Foot";
-          break;
+      if (vco2RangeDisplay < 0x08) {
+        StratuslfoWaveform = "64 Foot";
+      } else if (vco2RangeDisplay < 0x20) {
+        StratuslfoWaveform = "32 Foot";
+      } else if (vco2RangeDisplay < 0x40) {
+        StratuslfoWaveform = "16 Foot";
+      } else if (vco2RangeDisplay < 0x60) {
+        StratuslfoWaveform = "8 Foot";
+      } else if (vco2RangeDisplay < 0x77) {
+        StratuslfoWaveform = "4 Foot";
+      } else {
+        StratuslfoWaveform = "2 Foot";
       }
       showCurrentParameterPage("VCO2 Range", StratuslfoWaveform);
     } else {
@@ -4882,7 +5264,6 @@ void myControlChange(byte channel, byte control, int value) {
     case CCarpRate:
       {
         lowerData[P_arpRate] = value;
-        arpHzTarget = arpHzFromValue(lowerData[P_arpRate]);
         arpRatestr = ARPTEMPO[value];  // keep your existing table if you like it
         updatearpRate(1);
       }
@@ -5067,67 +5448,10 @@ void myControlChange(byte channel, byte control, int value) {
 
     case CCvco2Range:
       lowvco2RangeDisplay = value;
-      value = map(value, 0, 127, 0, 5);
       if (upperSW) {
-        if (upperData[P_vco2Waveform] < 3) {
-          switch (value) {
-            case 0:
-              upperData[P_vco2Range] = 0x00;
-              break;
-
-            case 1:
-              upperData[P_vco2Range] = 0x10;
-              break;
-
-            case 2:
-              upperData[P_vco2Range] = 0x30;
-              break;
-
-            case 3:
-              upperData[P_vco2Range] = 0x50;
-              break;
-
-            case 4:
-              upperData[P_vco2Range] = 0x70;
-              break;
-
-            case 5:
-              upperData[P_vco2Range] = 0x7F;
-              break;
-          }
-        } else {
-          upperData[P_vco2Range] = lowvco2RangeDisplay;
-        }
+        upperData[P_vco2Range] = value;
       } else {
-        if (lowerData[P_vco2Waveform] < 3) {
-          switch (value) {
-            case 0:
-              lowerData[P_vco2Range] = 0x00;
-              break;
-
-            case 1:
-              lowerData[P_vco2Range] = 0x10;
-              break;
-
-            case 2:
-              lowerData[P_vco2Range] = 0x30;
-              break;
-
-            case 3:
-              lowerData[P_vco2Range] = 0x50;
-              break;
-
-            case 4:
-              lowerData[P_vco2Range] = 0x70;
-              break;
-
-            case 5:
-              lowerData[P_vco2Range] = 0x7F;
-              break;
-          }
-        } else {
-          lowerData[P_vco2Range] = lowvco2RangeDisplay;
-        }
+        lowerData[P_vco2Range] = value;
         if (wholemode) {
           upperData[P_vco2Range] = lowerData[P_vco2Range];
         }
@@ -5474,10 +5798,10 @@ void myAfterTouch(byte channel, byte value) {
   }
 }
 
-void recallPatch(int patchNo) {
+void recallPatch(uint8_t rc) {
   allNotesOff();
 
-  File patchFile = SD.open(String(patchNo).c_str());
+  File patchFile = SD.open(String(rc).c_str());
   if (!patchFile) {
     Serial.println("File not found");
     return;
@@ -5487,37 +5811,17 @@ void recallPatch(int patchNo) {
   recallPatchData(patchFile, data);
   patchFile.close();
 
-  if (jp8Mode) {
-    // In JP-8 mode, slot number IS the program number; name comes from the file
-    if (upperSW) {
-      upperSlotRC = (uint8_t)patchNo;
-      currentPgmNumU = String(patchNo);
-      currentPatchNameU = data[0];
-      lastPatchRC_U = patchNo;
-    } else {
-      lowerSlotRC = (uint8_t)patchNo;
-      currentPgmNumL = String(patchNo);
-      currentPatchNameL = data[0];
-      lastPatchRC_L = patchNo;
-    }
-    setCurrentPatchData(data);
-    return;
-  }
-
-  // Legacy mode (your existing behaviour)
-  for (int i = 0; i < patches.size(); i++) {
-    if (patches[i].patchNo == patchNo) {
-      if (upperSW) {
-        upperPatchIndex = i;
-        currentPgmNumU = String(patches[i].patchNo);
-        currentPatchNameU = patches[i].patchName;
-      } else {
-        lowerPatchIndex = i;
-        currentPgmNumL = String(patches[i].patchNo);
-        currentPatchNameL = patches[i].patchName;
-      }
-      break;
-    }
+  // Slot number IS program number in JP-8 mode
+  if (upperSW) {
+    upperSlotRC = rc;
+    currentPgmNumU = String(rc);
+    currentPatchNameU = data[0];
+    lastPatchRC_U = rc;
+  } else {
+    lowerSlotRC = rc;
+    currentPgmNumL = String(rc);
+    currentPatchNameL = data[0];
+    lastPatchRC_L = rc;
   }
 
   setCurrentPatchData(data);
@@ -5810,212 +6114,478 @@ void reinitialiseToPanel() {
   // It must remain true until checkMux() has consumed all RE_READ slots.
 }
 
-void deletePerformance(int perfNo) {
-  char filename[32];
-  snprintf(filename, sizeof(filename), "/performances/perf%03d", perfNo);
-  if (SD.exists(filename)) {
-    SD.remove(filename);
-    Serial.print("[DELETE] Removed performance: ");
-    Serial.println(filename);
+void onSavePressed() {
+
+  // If we're in rename page, SAVE commits (you likely already have this)
+  if (state == PATCHNAMING && jp8NamingFromStore) {
+    commitStoreToRC(jp8StoreTargetRC);  // described below
+    return;
   }
-}
 
-void renumberPerformancesOnSD() {
-  char filename[32];
-  for (int i = 0; i < performances.size(); i++) {
-    Performance p = performances[i];
-    p.performanceNo = i + 1;
-    performances[i] = p;
+  // If we're in STORE_SELECT, SAVE commits to selected target using current name
+  if (state == JP8_STORE_SELECT && !inPerformanceMode) {
+    // Use current patch name as-is
+    renamedPatch = upperSW ? patchNameU : patchNameL;
+    if (renamedPatch.length() == 0) renamedPatch = INITPATCHNAME;
 
-    snprintf(filename, sizeof(filename), "/performances/perf%03d", p.performanceNo);
-    savePerformance(filename, p);
+    commitStoreToRC(jp8StoreTargetRC);
+    return;
   }
-}
 
-void checkSwitches() {
-
-  saveButton.update();
-  if (saveButton.held()) {
-    if (!jp8Mode) {
-      if (inPerformanceMode && (state == PARAMETER || state == PATCH)) state = PERFORMANCE_DELETE;
-      else if (state == PARAMETER || state == PATCH) state = DELETE;
-    }
+  // Normal entry into store-select
+  if (state == PARAMETER && !inPerformanceMode) {
+    state = JP8_STORE_SELECT;
+    jp8StoreTargetRC = activeSlotRC();  // default target = current slot
     updateScreen();
+    return;
+  }
+}
+
+static inline void jp8CancelDigitEntry() {
+  jp8DigitState = JP8_SELECT_ROW;
+  jp8DigitSource = JP8_SRC_NONE;
+  jp8Row = 0;
+  jp8Col = 0;
+  jp8DigitTimer = 0;
+  jp8BlinkTimer = 0;
+  jp8ForceRowLedOff();  // patch LEDs off
+  // If you also have perf digit LEDs, clear them too:
+  // perfClearRowLeds();
+}
+
+static inline void jp8StorePatchImmediate(uint8_t rc) {
+  if (!jp8_isValidRC(rc)) return;
+
+  // Keep current name (no rename)
+  String currentName = upperSW ? patchNameU : patchNameL;
+  if (currentName.length() == 0) currentName = INITPATCHNAME;
+
+  if (upperSW) {
+    patchNameU = currentName;
+    currentPatchNameU = currentName;
+    currentPgmNumU = String(rc);
+    upperSlotRC = rc;
+    lastPatchRC_U = rc;
+  } else {
+    patchNameL = currentName;
+    currentPatchNameL = currentName;
+    currentPgmNumL = String(rc);
+    lowerSlotRC = rc;
+    lastPatchRC_L = rc;
+  }
+
+  String patchData = getCurrentPatchData();
+  savePatch(String(rc).c_str(), patchData);
+
+  loadPatches();
+  refreshPatchDisplayFromState();
+  updateScreen();
+}
+
+void commitStoreToRC(uint8_t rc) {
+  if (!jp8_isValidRC(rc)) return;
+
+  // Put renamedPatch into the patch name field used by getCurrentPatchData()
+  if (upperSW) patchNameU = renamedPatch;
+  else patchNameL = renamedPatch;
+
+  String patchData = getCurrentPatchData();  // includes renamedPatch
+  savePatch(String(rc).c_str(), patchData);
+
+  // Update current slot/program tracking
+  if (upperSW) {
+    currentPgmNumU = String(rc);
+    upperSlotRC = rc;
+    lastPatchRC_U = rc;
+  } else {
+    currentPgmNumL = String(rc);
+    lowerSlotRC = rc;
+    lastPatchRC_L = rc;
+  }
+
+  jp8NamingFromStore = false;
+  refreshPatchDisplayFromState();
+  state = PARAMETER;
+  updateScreen();
+}
+
+inline void jp8EnterStoreNaming(uint8_t rc /* 11..88 */) {
+  jp8StoreTargetRC = rc;
+  jp8NamingFromStore = true;
+
+  renamedPatch = upperSW ? patchNameU : patchNameL;
+  if (renamedPatch.length() == 0) renamedPatch = INITPATCHNAME;
+
+  charIndex = 0;
+  currentCharacter = CHARACTERS[charIndex];
+  startedRenaming = false;
+
+  showRenamingPage(renamedPatch);
+  state = PATCHNAMING;
+  updateScreen();
+}
+
+static inline void jp8EnterStoreSelectFromCurrentSlot() {
+  jp8StoreTargetRC = activeSlotRC();
+  jp8DigitState = JP8_SELECT_ROW;
+  jp8DigitTimer = 0;
+  state = JP8_STORE_SELECT;
+  showSavingPage(upperSW ? patchNameU : patchNameL);
+  updateScreen();
+}
+
+static inline void jp8CommitStoreSameNameToTarget() {
+  if (!jp8_isValidRC(jp8StoreTargetRC)) return;
+
+  String currentName = upperSW ? patchNameU : patchNameL;
+  if (currentName.length() == 0) currentName = INITPATCHNAME;
+
+  if (upperSW) {
+    patchNameU = currentName;
+    currentPatchNameU = currentName;
+    currentPgmNumU = String(jp8StoreTargetRC);
+    upperSlotRC = jp8StoreTargetRC;
+    lastPatchRC_U = jp8StoreTargetRC;
+  } else {
+    patchNameL = currentName;
+    currentPatchNameL = currentName;
+    currentPgmNumL = String(jp8StoreTargetRC);
+    lowerSlotRC = jp8StoreTargetRC;
+    lastPatchRC_L = jp8StoreTargetRC;
+  }
+
+  savePatch(String(jp8StoreTargetRC).c_str(), getCurrentPatchData());
+  loadPatches();
+
+  jp8NamingFromStore = false;
+  jp8CancelDigitEntry();
+
+  state = PARAMETER;
+  refreshPatchDisplayFromState();
+  updateScreen();
+}
+
+static inline void jp8CommitNamingSave() {
+  // Decide where we are saving to:
+  const uint8_t targetRC = jp8NamingFromStore ? (uint8_t)jp8StoreTargetRC
+                                              : (uint8_t)jp8RenameTargetRC;
+
+  if (!jp8_isValidRC(targetRC)) return;
+
+  if (renamedPatch.length() == 0)
+    renamedPatch = INITPATCHNAME;
+
+  // Ensure getCurrentPatchData() writes correct name
+  if (upperSW) {
+    patchNameU = renamedPatch;
+    currentPatchNameU = renamedPatch;
+    currentPgmNumU = String(targetRC);
+    upperSlotRC = targetRC;
+    lastPatchRC_U = targetRC;
+  } else {
+    patchNameL = renamedPatch;
+    currentPatchNameL = renamedPatch;
+    currentPgmNumL = String(targetRC);
+    lowerSlotRC = targetRC;
+    lastPatchRC_L = targetRC;
+  }
+
+  String patchData = getCurrentPatchData();
+  savePatch(String(targetRC).c_str(), patchData);
+
+  loadPatches();
+  refreshPatchDisplayFromState();
+
+  // Exit naming
+  renamedPatch = "";
+  startedRenaming = false;
+  jp8NamingFromStore = false;
+  state = PARAMETER;
+  jp8CancelDigitEntry();
+  updateScreen();
+}
+
+static inline void jp8CommitNamingToTarget() {
+  if (renamedPatch.length() == 0) renamedPatch = INITPATCHNAME;
+
+  const uint8_t targetRC = jp8NamingFromStore ? jp8StoreTargetRC : jp8RenameTargetRC;
+  if (!jp8_isValidRC(targetRC)) return;
+
+  if (upperSW) {
+    patchNameU = renamedPatch;
+    currentPatchNameU = renamedPatch;
+    currentPgmNumU = String(targetRC);
+    upperSlotRC = targetRC;
+    lastPatchRC_U = targetRC;
+  } else {
+    patchNameL = renamedPatch;
+    currentPatchNameL = renamedPatch;
+    currentPgmNumL = String(targetRC);
+    lowerSlotRC = targetRC;
+    lastPatchRC_L = targetRC;
+  }
+
+  savePatch(String(targetRC).c_str(), getCurrentPatchData());
+  loadPatches();
+
+  renamedPatch = "";
+  startedRenaming = false;
+  jp8NamingFromStore = false;
+  jp8CancelDigitEntry();
+
+  state = PARAMETER;
+  refreshPatchDisplayFromState();
+  updateScreen();
+}
+
+void beginPatchNaming(const String &initialName) {
+  renamedPatch = initialName;
+  if (renamedPatch.length() == 0) renamedPatch = INITPATCHNAME;
+
+  charIndex = 0;
+  currentCharacter = CHARACTERS[charIndex];
+
+  startedRenaming = false;  // CRITICAL: first encoder move will clear name
+
+  showRenamingPage(renamedPatch);
+  state = PATCHNAMING;
+  updateScreen();
+}
+
+// Optional: tiny feedback (uses your existing overlay system if you have it)
+static inline void showQuickSavedToast(const char *what, uint8_t rc) {
+  // showCurrentParameterPage(String(what), String(rc));
+  // startParameterDisplay();
+}
+
+// Patch quick save (to current slot, same name)
+static inline void jp8QuickSavePatchToCurrentSlot() {
+  jp8StoreTargetRC = activeSlotRC();
+  if (!jp8_isValidRC(jp8StoreTargetRC)) return;
+
+  // Keep current name unchanged
+  String currentName = upperSW ? patchNameU : patchNameL;
+  if (currentName.length() == 0) currentName = INITPATCHNAME;
+
+  if (upperSW) {
+    patchNameU = currentName;
+    currentPatchNameU = currentName;
+    currentPgmNumU = String(jp8StoreTargetRC);
+    upperSlotRC = jp8StoreTargetRC;
+    lastPatchRC_U = jp8StoreTargetRC;
+  } else {
+    patchNameL = currentName;
+    currentPatchNameL = currentName;
+    currentPgmNumL = String(jp8StoreTargetRC);
+    lowerSlotRC = jp8StoreTargetRC;
+    lastPatchRC_L = jp8StoreTargetRC;
+  }
+
+  savePatch(String(jp8StoreTargetRC).c_str(), getCurrentPatchData());
+  loadPatches();
+
+  state = PARAMETER;
+  refreshPatchDisplayFromState();
+  showQuickSavedToast("Patch Saved", jp8StoreTargetRC);
+  updateScreen();
+}
+
+// Performance quick save (to current performance slot, same name)
+static inline uint8_t perfActiveRC() {
+  uint8_t rc = (uint8_t)currentPerformance.performanceNo;
+  if (jp8_isValidRC(rc)) return rc;
+  if (jp8_isValidRC(lastPerfRC)) return lastPerfRC;
+  return 11;
+}
+
+static inline void jp8QuickSavePerformanceToCurrentSlot() {
+  uint8_t rc = (uint8_t)currentPerformance.performanceNo;
+  if (!jp8_isValidRC(rc)) rc = jp8_isValidRC(lastPerfRC) ? lastPerfRC : 11;
+
+  Performance perfToSave = currentPerformance;
+  perfToSave.performanceNo = rc;
+  if (perfToSave.name.length() == 0) perfToSave.name = INITPATCHNAME;
+  perfToSave.mode = (PlayMode)playMode;
+
+  savePerformanceRC(rc, perfToSave);
+
+  currentPerformance = perfToSave;
+  lastPerfRC = rc;
+}
+
+static inline void syncPerformanceDisplayForTarget(uint8_t targetRc) {
+  String name = currentPerformance.name;
+  if (name.length() == 0) name = INITPATCHNAME;
+
+  showPerformancePage(
+    String(targetRc),
+    name,
+    currentPerformance.upperPatchNo,
+    getPatchName(currentPerformance.upperPatchNo),
+    currentPerformance.lowerPatchNo,
+    getPatchName(currentPerformance.lowerPatchNo)
+  );
+}
+
+static inline void enterPerformanceStoreSelectFromCurrent() {
+  perfStoreTargetRC = (uint8_t)currentPerformance.performanceNo;
+  if (!jp8_isValidRC(perfStoreTargetRC)) perfStoreTargetRC = jp8_isValidRC(lastPerfRC) ? lastPerfRC : 11;
+
+  jp8DigitState = JP8_SELECT_ROW;
+  jp8DigitTimer = 0;
+
+  syncPerformanceDisplayForTarget(perfStoreTargetRC);
+
+  state = PERFORMANCE_SAVE;
+  updateScreen();
+}
+
+static inline void enterPerformanceNamingFromStore(uint8_t rc) {
+  perfStoreTargetRC = rc;
+  perfNamingFromStore = true;
+
+  renamedPatch = currentPerformance.name;
+  if (renamedPatch.length() == 0) renamedPatch = INITPATCHNAME;
+
+  charIndex = 0;
+  currentCharacter = CHARACTERS[charIndex];
+  startedRenaming = false;
+
+  showRenamingPage(renamedPatch);
+  state = PERFORMANCE_NAMING;
+  updateScreen();
+}
+
+static inline void commitPerformanceSameNameToTarget() {
+  if (!jp8_isValidRC(perfStoreTargetRC)) return;
+
+  String currentName = currentPerformance.name;
+  if (currentName.length() == 0) currentName = INITPATCHNAME;
+
+  Performance perfToSave = currentPerformance;
+  perfToSave.performanceNo = perfStoreTargetRC;
+  perfToSave.name = currentName;
+  perfToSave.mode = (PlayMode)playMode;
+
+  capturePerformanceExtrasFromEngine(perfToSave);
+
+  savePerformanceRC(perfStoreTargetRC, perfToSave);
+
+  // Select new slot after saving
+  currentPerformance = perfToSave;
+  lastPerfRC = perfStoreTargetRC;
+
+  // Keep display vars consistent
+  syncPerformanceDisplayForTarget(perfStoreTargetRC);
+
+  perfNamingFromStore = false;
+  jp8CancelDigitEntry();
+
+  state = PARAMETER;
+  updateScreen();
+}
+
+static inline void commitPerformanceNamingToTarget() {
+  if (renamedPatch.length() == 0) renamedPatch = INITPATCHNAME;
+  if (!jp8_isValidRC(perfStoreTargetRC)) return;
+
+  Performance perfToSave = currentPerformance;
+  perfToSave.performanceNo = perfStoreTargetRC;
+  perfToSave.name = renamedPatch;
+  perfToSave.mode = (PlayMode)playMode;
+
+  capturePerformanceExtrasFromEngine(perfToSave);
+
+  savePerformanceRC(perfStoreTargetRC, perfToSave);
+
+  // Select new slot after saving
+  currentPerformance = perfToSave;
+  lastPerfRC = perfStoreTargetRC;
+
+  // Keep display vars consistent
+  syncPerformanceDisplayForTarget(perfStoreTargetRC);
+
+  renamedPatch = "";
+  startedRenaming = false;
+  perfNamingFromStore = false;
+  jp8CancelDigitEntry();
+
+  state = PARAMETER;
+  updateScreen();
+}
+
+// ---------- Main input scan ----------
+void checkSwitches() {
+  // SAVE button
+  saveButton.update();
+
+  if (saveButton.held()) {
+    saveHeldLatch = true;
+
+    if (jp8Mode && !inPerformanceMode) {
+      jp8QuickSavePatchToCurrentSlot();
+    } else if (jp8Mode && inPerformanceMode) {
+      jp8QuickSavePerformanceToCurrentSlot();
+    } else {
+      // do nothing
+    }
+    saveHeldLatch = false;
   } else if (saveButton.numClicks() == 1) {
+
+    // JP-8 patch-mode save workflow (no legacy SAVE state)
+    if (jp8Mode && !inPerformanceMode) {
+      switch (state) {
+        case PARAMETER:
+        case PATCH:
+          jp8EnterStoreSelectFromCurrentSlot();
+          return;
+
+        case JP8_STORE_SELECT:
+          jp8CommitStoreSameNameToTarget();
+          return;
+
+        case PATCHNAMING:
+          jp8CommitNamingToTarget();
+          return;
+
+        default:
+          return;
+      }
+    }
+
+    // --- In the JP8-mode section ---
+    if (jp8Mode && inPerformanceMode) {
+      switch (state) {
+        case PARAMETER:
+        case PATCH:
+          enterPerformanceStoreSelectFromCurrent();
+          return;
+
+        case PERFORMANCE_SAVE:
+          commitPerformanceSameNameToTarget();
+          return;
+
+        case PERFORMANCE_NAMING:
+          commitPerformanceNamingToTarget();
+          return;
+
+        default:
+          return;
+      }
+    }
+
     switch (state) {
-      case SAVE:
-        {
-          if (renamedPatch.length() == 0) {
-            renamedPatch = INITPATCHNAME;  // fallback if no rename occurred
-          }
-
-          // Update patch name depending on upper or lower
-          if (upperSW) {
-            patchNameU = renamedPatch;
-            currentPatchNameU = renamedPatch;
-            currentPgmNumU = String(patches.last().patchNo);
-          } else {
-            patchNameL = renamedPatch;
-            currentPatchNameL = renamedPatch;
-            currentPgmNumL = String(patches.last().patchNo);
-          }
-
-          // ✅ Update last patch in the buffer before saving
-          patches.last().patchName = renamedPatch;
-
-          // ✅ Save updated patch data
-          String patchData = getCurrentPatchData();
-          savePatch(String(patches.last().patchNo).c_str(), patchData);
-
-          // ✅ Reload and reorder patches explicitly
-          if (!jp8Mode) {
-            loadPatches();
-            // sortPatches();
-            // renumberPatchesOnSD();
-          }
-          setPatchesOrdering(patches.last().patchNo);
-
-          // ✅ Correctly update patch index for immediate display
-          for (int i = 0; i < patches.size(); i++) {
-            if (patches[i].patchNo == patches.last().patchNo) {
-              if (upperSW) upperPatchIndex = i;
-              else lowerPatchIndex = i;
-              break;
-            }
-          }
-
-          // ✅ Immediately refresh display with updated data
-          refreshPatchDisplayFromState();
-
-          renamedPatch = "";
-          state = PARAMETER;
-        }
-        updateScreen();
-        break;
-
-
-      case PATCHNAMING:
-        {
-          //Serial.println("renamedPatch BEFORE SAVING: " + renamedPatch);
-
-          if (renamedPatch.length() == 0) {
-            renamedPatch = patches.last().patchName;  // fallback to existing name
-          }
-
-          // Update correct upper/lower patch name based on current layer
-          if (upperSW) {
-            patchNameU = renamedPatch;
-            currentPatchNameU = renamedPatch;  // Update immediately
-            currentPgmNumU = String(patches.last().patchNo);
-          } else {
-            patchNameL = renamedPatch;
-            currentPatchNameL = renamedPatch;  // Update immediately
-            currentPgmNumL = String(patches.last().patchNo);
-          }
-
-          // Update last patch in the patches buffer
-          patches.last().patchName = renamedPatch;
-
-          // Save patch data (with the correct name included)
-          String patchData = getCurrentPatchData();
-          savePatch(String(patches.last().patchNo).c_str(), patchData);
-
-          if (!jp8Mode) {
-            loadPatches();
-            // sortPatches();
-            // renumberPatchesOnSD();
-          }                                // Refresh patches list from SD card
-          refreshPatchDisplayFromState();  // immediately update the display
-          setPatchesOrdering(patches.last().patchNo);
-
-          renamedPatch = "";
-          state = PARAMETER;
-        }
-        updateScreen();
-        break;
-
-
       case PARAMETER:
-        if (!inPerformanceMode && jp8Mode) {
-          jp8DigitState = JP8_SELECT_ROW;
-          state = JP8_STORE_SELECT;
-          updateScreen();
-          break;
-        }
+        break;  // IMPORTANT: prevent accidental fallthrough
 
-      case PERFORMANCE_SAVE:
-        currentPerformance = performances[performanceIndex];
-        state = PERFORMANCE_NAMING;
-        renamedPatch = currentPerformance.name;
-        charIndex = 0;
-        currentCharacter = CHARACTERS[charIndex];
-        startedRenaming = false;
-        showRenamingPage(renamedPatch);
-        updateScreen();
-        break;
-
-      case PERFORMANCE_NAMING:
-        if (saveButton.numClicks() == 1) {
-          if (renamedPatch.length() > 0) {
-            currentPerformance.name = renamedPatch;
-          }
-
-          upperSW = true;
-          savePatch(String(currentPerformance.upperPatchNo).c_str(), getCurrentPatchData());
-
-          upperSW = false;
-          savePatch(String(currentPerformance.lowerPatchNo).c_str(), getCurrentPatchData());
-
-          upperSW = true;
-
-          // Update full performance data
-          currentPerformance.upperPatchNo = patches[upperPatchIndex].patchNo;
-          currentPerformance.lowerPatchNo = patches[lowerPatchIndex].patchNo;
-          currentPerformance.mode = (PlayMode)playMode;
-
-          for (int i = 0; i < performances.size(); i++) {
-            if (performances[i].performanceNo == currentPerformance.performanceNo) {
-              performances[i] = currentPerformance;
-              break;
-            }
-          }
-
-          char filename[16];
-          snprintf(filename, sizeof(filename), "perf%03d", currentPerformance.performanceNo);
-
-          savePerformance(filename, currentPerformance);
-          loadPerformances();
-
-          renamedPatch = "";
-          charIndex = 0;
-          currentCharacter = CHARACTERS[0];
-          startedRenaming = false;
-          state = PARAMETER;
-        } else if (recallButton.numClicks() == 1) {
-          if (renamedPatch.length() < 12) {
-            renamedPatch.concat(String(currentCharacter));
-            charIndex = 0;
-            currentCharacter = CHARACTERS[charIndex];
-            showRenamingPage(renamedPatch);
-          }
-        } else if (backButton.numClicks() == 1) {
-          renamedPatch = "";
-          charIndex = 0;
-          startedRenaming = false;
-          state = PARAMETER;
-          if (performances.size() > 0 && performances.last().name == INITPATCHNAME) {
-            performances.pop();
-          }
-        }
-        updateScreen();
+      default:
         break;
     }
   }
 
+  // SETTINGS button
   settingsButton.update();
   if (settingsButton.held()) {
-    //If recall held, set current patch to match current hardware state
-    //Reinitialise all hardware values to force them to be re-read if different
     state = REINITIALISE;
     reinitialiseToPanel();
     updateScreen();
@@ -6026,113 +6596,159 @@ void checkSwitches() {
         showSettingsPage();
         updateScreen();
         break;
+
       case SETTINGS:
+        state = SETTINGSVALUE;
         showSettingsPage();
         updateScreen();
+        break;
+
       case SETTINGSVALUE:
         settings::save_current_value();
         state = SETTINGS;
         showSettingsPage();
         updateScreen();
         break;
+
+      default:
+        break;
     }
   }
 
+  // BACK button
   backButton.update();
   if (backButton.held()) {
-    //If Back button held, Panic - all notes off
     allNotesOff();
     updateScreen();
   } else if (backButton.numClicks() == 1) {
     switch (state) {
-      case RECALL:
-        setPatchesOrdering(patchNo);
-        state = PARAMETER;
-        updateScreen();
-        break;
-      case SAVE:
+      // Cancel save UI only; keep edited patch live (no recall/reload)
+      case JP8_STORE_SELECT:
         renamedPatch = "";
+        startedRenaming = false;
+        jp8NamingFromStore = false;
+        jp8CancelDigitEntry();
         state = PARAMETER;
-        if (!jp8Mode) {
-          loadPatches();
-          // sortPatches();
-          // renumberPatchesOnSD();
-        }
-        setPatchesOrdering(patchNo);
+        refreshPatchDisplayFromState();
         updateScreen();
         break;
+
       case PATCHNAMING:
-        charIndex = 0;
         renamedPatch = "";
-        state = SAVE;
-        updateScreen();
-        break;
-      case DELETE:
-        setPatchesOrdering(patchNo);
+        startedRenaming = false;
+        charIndex = 0;
+        currentCharacter = CHARACTERS[0];
+        jp8NamingFromStore = false;
+        jp8CancelDigitEntry();
         state = PARAMETER;
+        refreshPatchDisplayFromState();
         updateScreen();
         break;
+
+      case JP8_RECALL_SELECT:
+        jp8NamingFromStore = false;
+        jp8CancelDigitEntry();
+        state = PARAMETER;
+        refreshPatchDisplayFromState();
+        updateScreen();
+        break;
+
       case SETTINGS:
         state = PARAMETER;
+        refreshPatchDisplayFromState();
+        updateScreen();
         break;
+
       case SETTINGSVALUE:
         state = SETTINGS;
         showSettingsPage();
         updateScreen();
         break;
+
+      case PERFORMANCE_SAVE:
+        perfNamingFromStore = false;
+        jp8CancelDigitEntry();
+        state = PARAMETER;
+        updateScreen();
+        break;
+
       case PERFORMANCE_NAMING:
         renamedPatch = "";
+        startedRenaming = false;
         charIndex = 0;
-        state = PARAMETER;
-        // Optionally remove the unsaved performance from the buffer:
-        if (performances.size() > 0 && performances.last().name == INITPATCHNAME) {
-          performances.pop();
-        }
-        updateScreen();
-        break;
-      case PERFORMANCE_DELETE:
-        setPerformancesOrdering(currentPerformance.performanceNo);
+        currentCharacter = CHARACTERS[0];
+        perfNamingFromStore = false;
+        jp8CancelDigitEntry();
         state = PARAMETER;
         updateScreen();
         break;
-      case JP8_RECALL_SELECT:
-      case JP8_STORE_SELECT:
-        jp8DigitState = JP8_SELECT_ROW;
-        state = PARAMETER;
-        updateScreen();
+
+      default:
         break;
     }
   }
 
-  // Encoder switch
+  // Encoder switch (RECALL button)
   recallButton.update();
+
   if (recallButton.held()) {
     if (!recallHeldToggleLatch) {
       inPerformanceMode = !inPerformanceMode;
       recallHeldToggleLatch = true;
 
-      //Serial.print("[MODE] Switched to ");
-      //Serial.println(inPerformanceMode ? "Performance Mode" : "Patch Mode");
-
       showCurrentParameterPage("Mode", inPerformanceMode ? "Performance" : "Patch");
       startParameterDisplay();
 
-      if (inPerformanceMode && performances.size() > 0) {
-        // Entering Performance Mode
-        performanceIndex = 0;
-        currentPerformance = performances[performanceIndex];
+      auto safeRC = [&](uint8_t rc) -> uint8_t {
+        return jp8_isValidRC(rc) ? rc : 11;
+      };
 
-        showPerformancePage(
-          String(currentPerformance.performanceNo),
-          currentPerformance.name,
-          currentPerformance.upperPatchNo,
-          getPatchName(currentPerformance.upperPatchNo),
-          currentPerformance.lowerPatchNo,
-          getPatchName(currentPerformance.lowerPatchNo));
+      exitManualModeIfActive();
 
+      if (inPerformanceMode) {
+
+        oldarpModeSW = lowerData[P_arpModeSW];
+        oldarpRangeSW = lowerData[P_arpRangeSW];
+        oldarpRate = lowerData[P_arpRate];
+        oldlastPatchRC_U = lastPatchRC_U;
+        oldlastPatchRC_L = lastPatchRC_L;
+
+        oldupperSW = upperSW;
+        oldlowerSW = lowerSW;
+        oldplayMode = playMode;
+        oldwholemode = wholemode;
+
+        jp8PresetMode = true;
+        recallPerformanceRC(safeRC(lastPerfRC));
       } else {
-        // Returning to Patch Mode
+        jp8PresetMode = false;
+
+        lowerData[P_arpModeSW] = oldarpModeSW;
+        lowerData[P_arpRangeSW] = oldarpRangeSW;
+        lowerData[P_arpRate] = oldarpRate;
+
+        updateArpMode(0);
+        updateArpRange(0);
+        updatearpRate(0);
+
+        upperSW = oldupperSW;
+        lowerSW = oldlowerSW;
+        playMode = oldplayMode;
+        wholemode = oldwholemode;
+
+        lastPatchRC_U = oldlastPatchRC_U;
+        lastPatchRC_L = oldlastPatchRC_L;
+
+        updateplayMode(0);
+
+        if (upperSW) {
+        recallPatch(safeRC(lastPatchRC_U));
+        } else {
+          recallPatch(safeRC(lastPatchRC_L));
+        }
+
         refreshPatchDisplayFromState();
+        updateScreen();
       }
     }
   } else {
@@ -6141,109 +6757,13 @@ void checkSwitches() {
 
   if (recallButton.numClicks() == 1) {
     switch (state) {
-      case RECALL:
-        //Serial.println("[INFO] Ignored default RECALL to avoid overwriting performance recall.");
-        state = PARAMETER;
-        updateScreen();
-        break;
-      case SAVE:
-        showRenamingPage(patches.last().patchName);
-        patchName = patches.last().patchName;
-        state = PATCHNAMING;
-        updateScreen();
-        break;
-      case PATCHNAMING:
-        if (renamedPatch.length() < 12)  //actually 12 chars
-        {
-          renamedPatch.concat(String(currentCharacter));
-          charIndex = 0;
-          currentCharacter = CHARACTERS[charIndex];
-          showRenamingPage(renamedPatch);
-        }
-        updateScreen();
-        break;
-      case DELETE:
-        if (jp8Mode) {
-          state = PARAMETER;
-          updateScreen();
-          break;
-        }
-        if (patches.size() > 1) {
-          state = DELETEMSG;
-          patchNo = patches.first().patchNo;     //PatchNo to delete from SD card
-          patches.shift();                       //Remove patch from circular buffer
-          deletePatch(String(patchNo).c_str());  //Delete from SD card
-          if (!jp8Mode) {
-            loadPatches();
-            // sortPatches();
-            // renumberPatchesOnSD();
-          }  //Repopulate circular buffer to start from lowest Patch No
-          if (!jp8Mode) {
-            //loadPatches();
-            // sortPatches();
-            renumberPatchesOnSD();
-          }                                   //Repopulate circular buffer again after delete
-          patchNo = patches.first().patchNo;  //Go back to 1
-          recallPatch(patchNo);               //Load first patch
-        }
-        state = PARAMETER;
-        break;
-      case SETTINGS:
-        state = SETTINGSVALUE;
-        showSettingsPage();
-        updateScreen();
-        break;
-      case SETTINGSVALUE:
-        settings::save_current_value();
-        state = SETTINGS;
-        showSettingsPage();
-        updateScreen();
-        break;
-
-      case PARAMETER:
-        // Enter performance recall
-        if (performances.size() > 0) {
-          currentPerformance = performances.first();
-          showPerformancePage(
-            String(currentPerformance.performanceNo),
-            currentPerformance.name,
-            currentPerformance.upperPatchNo,
-            getPatchName(currentPerformance.upperPatchNo),
-            currentPerformance.lowerPatchNo,
-            getPatchName(currentPerformance.lowerPatchNo));
-          state = PERFORMANCE_RECALL;
-        }
-        updateScreen();
-        break;
-
-      case PERFORMANCE_RECALL:
-        for (int i = 0; i < patches.size(); i++) {
-          if (patches[i].patchNo == currentPerformance.upperPatchNo) {
-            upperPatchIndex = i;
-          }
-          if (patches[i].patchNo == currentPerformance.lowerPatchNo) {
-            lowerPatchIndex = i;
-          }
-        }
-
-        playMode = currentPerformance.mode;
-        wholemode = (playMode == WHOLE);
-        updateplayMode(0);
-
-        upperSW = true;
-        recallPatch(currentPerformance.upperPatchNo);
-
-        upperSW = false;
-        recallPatch(currentPerformance.lowerPatchNo);
-
-        refreshPatchDisplayFromState();
-
-        state = PARAMETER;
-        patchNo = 0;  // ✅ Clear global patchNo to avoid accidental reuse
-        updateScreen();
+      case JP8_STORE_SELECT:
+        // After first SAVE, encoder press always enters patch naming
+        jp8EnterStoreNaming(jp8StoreTargetRC);
         return;
 
-      case PERFORMANCE_NAMING:
+      case PATCHNAMING:
+        // Your original: encoder press appends the currentCharacter
         if (renamedPatch.length() < 12) {
           renamedPatch.concat(String(currentCharacter));
           charIndex = 0;
@@ -6253,149 +6773,62 @@ void checkSwitches() {
         updateScreen();
         break;
 
-      case PERFORMANCE_DELETE:
-        if (performances.size() > 0) {
-          state = PERFORMANCE_DELETEMSG;
-
-          int deletedNo = performances.first().performanceNo;
-          performances.shift();          // Remove from buffer
-          deletePerformance(deletedNo);  // Delete file
-          loadPerformances();            // Refresh buffer
-          renumberPerformancesOnSD();    // Reorder files
-          loadPerformances();            // Reload to apply new order
-
-          currentPerformance = performances.first();
-          recallPerformance(currentPerformance);
-        }
-        state = PARAMETER;
-        updateScreen();
+      case PERFORMANCE_SAVE:
+        // After first SAVE in performance mode, encoder press enters performance naming
+        enterPerformanceNamingFromStore(perfStoreTargetRC);
         return;
 
-
-      case PERFORMANCE_DELETEMSG:
-        // Show deletion complete screen briefly
-        tft.fillScreen(ST7735_BLACK);
-        tft.setFont(&FreeSans12pt7b);
-        tft.setTextColor(ST7735_YELLOW);
-        tft.setCursor(10, 60);
-        tft.println("Renumbering");
-        tft.setCursor(10, 100);
-        tft.println("Performances...");
-        tft.updateScreen();
-        delay(1000);
-        state = PARAMETER;
+      case PERFORMANCE_NAMING:
+        // Encoder press appends a character while naming performances
+        if (renamedPatch.length() < 12) {
+          renamedPatch.concat(String(currentCharacter));
+          charIndex = 0;
+          currentCharacter = CHARACTERS[charIndex];
+          showRenamingPage(renamedPatch);
+        }
         updateScreen();
+        break;
+
+      case SETTINGS:
+        state = SETTINGSVALUE;
+        showSettingsPage();
+        updateScreen();
+        break;
+
+      case SETTINGSVALUE:
+        settings::save_current_value();
+        state = SETTINGS;
+        showSettingsPage();
+        updateScreen();
+        break;
+
+      default:
         break;
     }
   }
 }
 
-// Updated checkEncoder() with upperPatchIndex and lowerPatchIndex
+// ---------- Encoder rotation: ONLY naming/settings/perf naming ----------
 void checkEncoder() {
-  long encRead = encoder.read();
+  const long encRead = encoder.read();
   bool moved = false;
 
-  if ((encCW && encRead > encPrevious + 3) || (!encCW && encRead < encPrevious - 3)) {
+  const bool movedForward = (encCW && encRead > encPrevious + 3) || (!encCW && encRead < encPrevious - 3);
+  const bool movedBackward = (encCW && encRead < encPrevious - 3) || (!encCW && encRead > encPrevious + 3);
+
+  if (movedForward) {
     moved = true;
 
     switch (state) {
-
-      case PERFORMANCE_DELETE:
-        if (encCW) {
-          performances.push(performances.shift());
-        } else {
-          performances.unshift(performances.pop());
-        }
-        updateScreen();
-        break;
-
-      case PERFORMANCE_SAVE:
-        performanceIndex++;
-        if (performanceIndex >= performances.size()) performanceIndex = 0;
-        currentPerformance = performances[performanceIndex];
-        showPerformancePage(
-          String(currentPerformance.performanceNo),
-          currentPerformance.name,
-          currentPerformance.upperPatchNo,
-          getPatchName(currentPerformance.upperPatchNo),
-          currentPerformance.lowerPatchNo,
-          getPatchName(currentPerformance.lowerPatchNo));
-        updateScreen();
-        break;
-
-      case PERFORMANCE_RECALL:
-        performanceIndex++;
-        if (performanceIndex >= performances.size()) performanceIndex = 0;
-        currentPerformance = performances[performanceIndex];
-        showPerformancePage(
-          String(currentPerformance.performanceNo),
-          currentPerformance.name,
-          currentPerformance.upperPatchNo,
-          getPatchName(currentPerformance.upperPatchNo),
-          currentPerformance.lowerPatchNo,
-          getPatchName(currentPerformance.lowerPatchNo));
-        updateScreen();
-        break;
-
       case PERFORMANCE_NAMING:
+      case PATCHNAMING:
         if (!startedRenaming) {
           renamedPatch = "";
           startedRenaming = true;
         }
-
         charIndex++;
         if (charIndex >= TOTALCHARS) charIndex = 0;
         currentCharacter = CHARACTERS[charIndex];
-        showRenamingPage(renamedPatch + currentCharacter);
-        updateScreen();
-        break;
-
-      case PARAMETER:
-        if (inPerformanceMode) {
-          performanceIndex++;
-          if (performanceIndex >= performances.size()) performanceIndex = 0;
-          currentPerformance = performances[performanceIndex];
-
-          for (int i = 0; i < patches.size(); i++) {
-            if (patches[i].patchNo == currentPerformance.upperPatchNo) upperPatchIndex = i;
-            if (patches[i].patchNo == currentPerformance.lowerPatchNo) lowerPatchIndex = i;
-          }
-
-          playMode = currentPerformance.mode;
-          wholemode = (playMode == WHOLE);
-          updateplayMode(0);
-
-          upperSW = true;
-          recallPatch(currentPerformance.upperPatchNo);
-          upperSW = false;
-          recallPatch(currentPerformance.lowerPatchNo);
-        } else {
-          if (upperSW) {
-            upperPatchIndex++;
-            if (upperPatchIndex >= patches.size()) upperPatchIndex = 0;
-            patchNo = patches[upperPatchIndex].patchNo;
-            recallPatch(patchNo);
-          } else {
-            lowerPatchIndex++;
-            if (lowerPatchIndex >= patches.size()) lowerPatchIndex = 0;
-            patchNo = patches[lowerPatchIndex].patchNo;
-            recallPatch(patchNo);
-          }
-        }
-        refreshPatchDisplayFromState();
-        updateScreen();
-        break;
-
-      case RECALL:
-      case SAVE:
-      case DELETE:
-        patches.push(patches.shift());
-        updateScreen();
-        break;
-
-      case PATCHNAMING:
-        if (charIndex == TOTALCHARS) charIndex = 0;
-        currentCharacter = CHARACTERS[charIndex++];
         showRenamingPage(renamedPatch + currentCharacter);
         updateScreen();
         break;
@@ -6411,109 +6844,23 @@ void checkEncoder() {
         showSettingsPage();
         updateScreen();
         break;
+
+      default:
+        break;
     }
-  } else if ((encCW && encRead < encPrevious - 3) || (!encCW && encRead > encPrevious + 3)) {
+  } else if (movedBackward) {
     moved = true;
 
     switch (state) {
-
-      case PERFORMANCE_DELETE:
-        if (encCW) {
-          performances.push(performances.shift());
-        } else {
-          performances.unshift(performances.pop());
-        }
-        updateScreen();
-        break;
-
-      case PERFORMANCE_SAVE:
-        performanceIndex--;
-        if (performanceIndex < 0) performanceIndex = performances.size() - 1;
-        currentPerformance = performances[performanceIndex];
-        showPerformancePage(
-          String(currentPerformance.performanceNo),
-          currentPerformance.name,
-          currentPerformance.upperPatchNo,
-          getPatchName(currentPerformance.upperPatchNo),
-          currentPerformance.lowerPatchNo,
-          getPatchName(currentPerformance.lowerPatchNo));
-        updateScreen();
-        break;
-
-      case PERFORMANCE_RECALL:
-        performanceIndex--;
-        if (performanceIndex < 0) performanceIndex = performances.size() - 1;
-        currentPerformance = performances[performanceIndex];
-        showPerformancePage(
-          String(currentPerformance.performanceNo),
-          currentPerformance.name,
-          currentPerformance.upperPatchNo,
-          getPatchName(currentPerformance.upperPatchNo),
-          currentPerformance.lowerPatchNo,
-          getPatchName(currentPerformance.lowerPatchNo));
-        updateScreen();
-        break;
-
       case PERFORMANCE_NAMING:
+      case PATCHNAMING:
         if (!startedRenaming) {
           renamedPatch = "";
           startedRenaming = true;
         }
-
         charIndex--;
         if (charIndex < 0) charIndex = TOTALCHARS - 1;
         currentCharacter = CHARACTERS[charIndex];
-        showRenamingPage(renamedPatch + currentCharacter);
-        updateScreen();
-        break;
-
-      case PARAMETER:
-        if (inPerformanceMode) {
-          performanceIndex--;
-          if (performanceIndex < 0) performanceIndex = performances.size() - 1;
-          currentPerformance = performances[performanceIndex];
-
-          for (int i = 0; i < patches.size(); i++) {
-            if (patches[i].patchNo == currentPerformance.upperPatchNo) upperPatchIndex = i;
-            if (patches[i].patchNo == currentPerformance.lowerPatchNo) lowerPatchIndex = i;
-          }
-
-          playMode = currentPerformance.mode;
-          wholemode = (playMode == WHOLE);
-          updateplayMode(0);
-
-          upperSW = true;
-          recallPatch(currentPerformance.upperPatchNo);
-          upperSW = false;
-          recallPatch(currentPerformance.lowerPatchNo);
-        } else {
-          if (upperSW) {
-            upperPatchIndex--;
-            if (upperPatchIndex < 0) upperPatchIndex = patches.size() - 1;
-            patchNo = patches[upperPatchIndex].patchNo;
-            recallPatch(patchNo);
-          } else {
-            lowerPatchIndex--;
-            if (lowerPatchIndex < 0) lowerPatchIndex = patches.size() - 1;
-            patchNo = patches[lowerPatchIndex].patchNo;
-            recallPatch(patchNo);
-          }
-        }
-        refreshPatchDisplayFromState();
-        updateScreen();
-        break;
-
-
-      case RECALL:
-      case SAVE:
-      case DELETE:
-        patches.unshift(patches.pop());
-        updateScreen();
-        break;
-
-      case PATCHNAMING:
-        if (charIndex == -1) charIndex = TOTALCHARS - 1;
-        currentCharacter = CHARACTERS[charIndex--];
         showRenamingPage(renamedPatch + currentCharacter);
         updateScreen();
         break;
@@ -6529,12 +6876,13 @@ void checkEncoder() {
         showSettingsPage();
         updateScreen();
         break;
+
+      default:
+        break;
     }
   }
 
-  if (moved) {
-    encPrevious = encRead;
-  }
+  if (moved) encPrevious = encRead;
 }
 
 String getPatchName(int patchNo) {
@@ -6542,13 +6890,6 @@ String getPatchName(int patchNo) {
     if (patches[i].patchNo == patchNo) return patches[i].patchName;
   }
   return "-";
-}
-
-void setPerformancesOrdering(int no) {
-  if (performances.size() < 2) return;
-  while (performances.first().performanceNo != no) {
-    performances.push(performances.shift());
-  }
 }
 
 inline bool isRereadSentinel(int v) {
@@ -6572,10 +6913,6 @@ void checkMux() {
   mux1Read = adc->adc0->analogRead(MUX1_S);
   mux2Read = adc->adc0->analogRead(MUX2_S);
   mux3Read = adc->adc1->analogRead(MUX3_S);
-
-  // if (mux1Read > (mux1ValuesPrev[muxInput] + QUANTISE_FACTOR) || mux1Read < (mux1ValuesPrev[muxInput] - QUANTISE_FACTOR)) {
-  //   mux1ValuesPrev[muxInput] = mux1Read;
-  //   mux1Read = (mux1Read >> resolutionFrig);  // Change range to 0-127
 
   bool reread1 = isRereadSentinel(mux1ValuesPrev[muxInput]);
 
@@ -6641,10 +6978,6 @@ void checkMux() {
     suppressParamAnnounce = prevSuppress;
   }
 
-  // if (mux2Read > (mux2ValuesPrev[muxInput] + QUANTISE_FACTOR) || mux2Read < (mux2ValuesPrev[muxInput] - QUANTISE_FACTOR)) {
-  //   mux2ValuesPrev[muxInput] = mux2Read;
-  //   mux2Read = (mux2Read >> resolutionFrig);  // Change range to 0-127
-
   bool reread2 = isRereadSentinel(mux2ValuesPrev[muxInput]);
 
   if (reread2 || mux2Read > (mux2ValuesPrev[muxInput] + QUANTISE_FACTOR) || mux2Read < (mux2ValuesPrev[muxInput] - QUANTISE_FACTOR)) {
@@ -6696,10 +7029,6 @@ void checkMux() {
     }
     suppressParamAnnounce = prevSuppress;
   }
-
-  // if (mux3Read > (mux3ValuesPrev[muxInput] + QUANTISE_FACTOR) || mux3Read < (mux3ValuesPrev[muxInput] - QUANTISE_FACTOR)) {
-  //   mux3ValuesPrev[muxInput] = mux3Read;
-  //   mux3Read = (mux3Read >> resolutionFrig);  // Change range to 0-127
 
   bool reread3 = isRereadSentinel(mux3ValuesPrev[muxInput]);
 

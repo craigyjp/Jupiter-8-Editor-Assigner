@@ -41,6 +41,7 @@ String currentPgmNumL = "";
 String currentPatchNameU = "";
 String currentPatchNameL = "";
 String newPatchName = "";
+String savePatchName = "";
 const char *currentSettingsOption = "";
 const char *currentSettingsValue = "";
 int currentSettingsPart = SETTINGS;
@@ -65,7 +66,7 @@ void renderBootUpPage() {
   tft.setFont(&Org_01);
   tft.setTextSize(1);
   tft.setTextColor(ST7735_WHITE);
-  tft.println("HYBRID");
+  tft.println("ACB Tech");
   tft.setTextColor(ST7735_BLACK);
   tft.setCursor(91, 37);
   tft.println("SYNTHESIZER");
@@ -73,7 +74,7 @@ void renderBootUpPage() {
   tft.setFont(&Yeysk16pt7b);
   tft.setCursor(0, 70);
   tft.setTextSize(1);
-  tft.println("A Bit More");
+  tft.println("Jupiter 8");
   tft.setTextColor(ST7735_RED);
   tft.setFont(&FreeSans9pt7b);
   tft.setCursor(110, 95);
@@ -134,14 +135,23 @@ void renderCurrentPatchPage() {
   tft.setFont(&FreeSans12pt7b);
   tft.setTextSize(1);
 
+  if (!inPerformanceMode) {
   tft.setCursor(5, 20);
   tft.println("Num");
+  }
 
-  tft.setCursor(70, 20);  // aligned with parameter page
   if (inPerformanceMode) {
-    tft.print("Performance ");
-    tft.print(currentPerformance.performanceNo);
+    tft.setCursor(5, 20);  // aligned with parameter page
+    // Use the display vars (kept in sync via showPerformancePage/sync helper)
+    String name = currentPerfName;
+    if (name.length() == 0) name = INITPATCHNAME;
+
+    tft.print("Perf ");
+    tft.print(currentPerfNum);
+    tft.print(" ");
+    tft.println(name);  // will wrap if too long
   } else {
+    tft.setCursor(70, 20);
     tft.println("Patchname");
   }
 
@@ -194,14 +204,23 @@ void renderCurrentParameterPage() {
   tft.setFont(&FreeSans12pt7b);
   tft.setTextSize(1);
 
+  if (!inPerformanceMode) {
   tft.setCursor(5, 20);
   tft.println("Num");
+  }
 
-  tft.setCursor(70, 20);  // moved left
   if (inPerformanceMode) {
-    tft.print("Performance ");
-    tft.print(currentPerformance.performanceNo);
+    tft.setCursor(5, 20);  // aligned with parameter page
+    // Use the display vars (kept in sync via showPerformancePage/sync helper)
+    String name = currentPerfName;
+    if (name.length() == 0) name = INITPATCHNAME;
+
+    tft.print("Perf ");
+    tft.print(currentPerfNum);
+    tft.print(" ");
+    tft.println(name);  // will wrap if too long
   } else {
+    tft.setCursor(70, 20);
     tft.println("Patchname");
   }
 
@@ -267,80 +286,6 @@ void renderCurrentParameterPage() {
   }
 }
 
-void renderPerformanceDeletePage() {
-  tft.fillScreen(ST7735_BLACK);
-  tft.setFont(&FreeSansBold18pt7b);
-  tft.setCursor(10, 20);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.setTextSize(1);
-  tft.println("Delete Perf?");
-  tft.drawFastHLine(10, 50, tft.width() - 20, ST7735_RED);
-
-  tft.setTextSize(2);
-  tft.setFont(&FreeSans9pt7b);
-  tft.setCursor(10, 80);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.println(performances.last().performanceNo);
-  tft.setCursor(100, 80);
-  tft.setTextColor(ST7735_WHITE);
-  tft.println(performances.last().name);
-
-  tft.fillRect(10, 120, tft.width() - 20, 44, ST77XX_RED);
-
-  tft.setCursor(10, 130);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.println(performances.first().performanceNo);
-  tft.setCursor(100, 130);
-  tft.setTextColor(ST7735_WHITE);
-  tft.println(performances.first().name);
-
-  tft.setCursor(10, 180);
-  tft.setTextColor(ST7735_YELLOW);
-  performances.size() > 1 ? tft.println(performances[1].performanceNo) : tft.println(performances.last().performanceNo);
-  tft.setCursor(100, 180);
-  tft.setTextColor(ST7735_WHITE);
-  performances.size() > 1 ? tft.println(performances[1].name) : tft.println(performances.last().name);
-}
-
-void renderDeletePatchPage() {
-  tft.fillScreen(ST7735_BLACK);
-  tft.setFont(&FreeSansBold18pt7b);
-  tft.setCursor(10, 20);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.setTextSize(1);
-  tft.println("Delete?");
-  tft.drawFastHLine(10, 50, tft.width() - 20, ST7735_RED);
-
-  tft.setTextSize(2);
-  tft.setFont(&FreeSans9pt7b);
-  tft.setCursor(10, 80);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.println(patches.last().patchNo);
-  tft.setCursor(100, 80);
-  tft.setTextColor(ST7735_WHITE);
-  tft.println(patches.last().patchName);
-
-  tft.fillRect(10, 120, tft.width() - 20, 44, ST77XX_RED);
-
-  tft.setCursor(10, 130);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.println(patches.first().patchNo);
-  tft.setCursor(100, 130);
-  tft.setTextColor(ST7735_WHITE);
-  tft.println(patches.first().patchName);
-}
-
-void renderDeleteMessagePage() {
-  tft.fillScreen(ST7735_BLACK);
-  tft.setFont(&FreeSans12pt7b);
-  tft.setCursor(10, 20);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.setTextSize(1);
-  tft.println("Renumbering");
-  tft.setCursor(10, 80);
-  tft.println("SD Card");
-}
-
 void renderSavePage() {
   tft.fillScreen(ST7735_BLACK);
   tft.setFont(&FreeSansBold18pt7b);
@@ -396,40 +341,28 @@ void renderPatchNamingPage() {
   tft.println(newPatchName);
 }
 
-void renderRecallPage() {
+void renderPatchSavingPage() {
   tft.fillScreen(ST7735_BLACK);
   tft.setFont(&FreeSansBold18pt7b);
   tft.setCursor(10, 20);
   tft.setTextColor(ST7735_YELLOW);
   tft.setTextSize(1);
-  tft.println("Recall?");
+  tft.println("Save Patch");
   tft.drawFastHLine(10, 50, tft.width() - 20, ST7735_RED);
 
   tft.setTextSize(2);
   tft.setFont(&FreeSans9pt7b);
-
-  // Upper patch display
+  tft.setTextColor(ST7735_WHITE);
   tft.setCursor(10, 80);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.println(currentPgmNumU);
-  tft.setCursor(100, 80);
-  tft.setTextColor(ST7735_WHITE);
-  tft.println(currentPatchNameU);
-
-  // Divider
-  tft.fillRect(10, 120, tft.width() - 20, 4, ST77XX_RED);
-
-  // Lower patch display
-  tft.setCursor(10, 140);
-  tft.setTextColor(ST7735_YELLOW);
-  tft.println(currentPgmNumL);
-  tft.setCursor(100, 140);
-  tft.setTextColor(ST7735_WHITE);
-  tft.println(currentPatchNameL);
+  tft.println(savePatchName);
 }
 
 void showRenamingPage(String newName) {
   newPatchName = newName;
+}
+
+void showSavingPage(String newName) {
+  savePatchName = newName;
 }
 
 void renderUpDown(uint16_t x, uint16_t y, uint16_t colour) {
@@ -509,58 +442,50 @@ void showSettingsPage(const char *option, const char *value, int settingsPart) {
   currentSettingsPart = settingsPart;
 }
 
+// ---------- Screen renderer ----------
 void updateScreen() {
-    switch (state) {
-      case PARAMETER:
-        if ((millis() - timer) > DISPLAYTIMEOUT) {
-          renderCurrentPatchPage();
-        } else {
-          renderCurrentParameterPage();
-        }
-        break;
-      case RECALL:
-        renderRecallPage();
-        break;
-      case SAVE:
-        renderSavePage();
-        break;
-      case REINITIALISE:
-        renderReinitialisePage();
-        tft.updateScreen();  //update before delay
-        state = PARAMETER;
-        break;
-      case PATCHNAMING:
-        renderPatchNamingPage();
-        break;
-      case PATCH:
-        renderCurrentPatchPage();
-        break;
-      case DELETE:
-        renderDeletePatchPage();
-        break;
-      case DELETEMSG:
-        renderDeleteMessagePage();
-        break;
-      case SETTINGS:
-      case SETTINGSVALUE:
-        renderSettingsPage();
-        break;
-      case PERFORMANCE_RECALL:
-      case PERFORMANCE_EDIT:
-      case PERFORMANCE_SAVE:
-        renderPerformancePage();
-        break;
-      case PERFORMANCE_NAMING:
-        renderPerformanceNamingPage();  // see below
-        break;
-      case PERFORMANCE_DELETE:
-        renderPerformanceDeletePage();
-        break;
-      case PERFORMANCE_DELETEMSG:
-        // Handled inside checkSwitches() (already shows a message & delay)
-        break;
-    }
-    tft.updateScreen();
+  switch (state) {
+    case PARAMETER:
+      if ((millis() - timer) > DISPLAYTIMEOUT) renderCurrentPatchPage();
+      else renderCurrentParameterPage();
+      break;
+
+    case REINITIALISE:
+      renderReinitialisePage();
+      tft.updateScreen();
+      state = PARAMETER;
+      break;
+
+    case PATCH:
+      renderCurrentPatchPage();
+      break;
+
+    case PATCHNAMING:
+      renderPatchNamingPage();
+      break;
+
+    case SETTINGS:
+    case SETTINGSVALUE:
+      renderSettingsPage();
+      break;
+
+    case JP8_STORE_SELECT:
+      renderPatchSavingPage();
+      break;
+
+    case PERFORMANCE_NAMING:
+      renderPerformanceNamingPage();
+      break;
+
+    case PERFORMANCE_SAVE:
+      renderPerformancePage();
+      break;
+
+    case JP8_RECALL_SELECT:
+      break;
+  }
+
+  tft.updateScreen();
 }
 
 void setupDisplay() {

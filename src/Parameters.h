@@ -85,7 +85,22 @@ bool arpForcedPoly2 = false;
 
 // JP8 style patch handling
 
+enum Jp8Target { JP8_TARGET_PATCH, JP8_TARGET_PERF };
+
+enum Jp8DigitSource { JP8_SRC_NONE, JP8_SRC_PATCH, JP8_SRC_PERF };
+Jp8DigitSource jp8DigitSource = JP8_SRC_NONE;
+uint8_t jp8RenameTargetRC = 11;   // slot to overwrite when renaming in place
+
+uint8_t perfStoreTargetRC = 11;     // 11..88
+bool perfNamingFromStore = false;   // analogous to jp8NamingFromStore
+static bool saveHeldLatch = false;
+
 bool jp8Mode = true;
+int jp8StoreTargetRC = 11;      // which JP-8 slot we are storing into
+bool jp8NamingFromStore = false;
+
+uint8_t lastPatchRC = 11;   // 11..88
+uint8_t lastPerfRC  = 11;   // 11..88
 
 #define JP8_SELECT_ROW 0
 #define JP8_SELECT_COL 1
@@ -108,6 +123,8 @@ constexpr uint8_t LED_OFF = LOW;
 
 int lastPatchRC_U = 11; 
 int lastPatchRC_L = 11;
+int oldlastPatchRC_U = 11; 
+int oldlastPatchRC_L = 11;
 
 bool manualSyncPending = false;
 uint8_t manualSyncLayer = 0;
@@ -119,6 +136,13 @@ const uint16_t MANUAL_SYNC_PERIOD_MS = 2;
 bool manualSyncInProgress = false;
 bool suppressParamAnnounce = false;
 bool bootInitInProgress = true;
+
+bool jp8PresetMode = false;
+
+static constexpr uint8_t PERF_DEFAULT_SPLIT_POINT = 12; // 0..24
+static constexpr uint8_t PERF_DEFAULT_SPLIT_TRANS = 2;  // 0..4
+static constexpr uint8_t PERF_DEFAULT_VOL = 127;        // 0..127
+
 // Other stuff
 
 bool showMuxRead = true;
@@ -210,6 +234,7 @@ int panelData[77];
 
 
 int playMode = 0;
+int oldplayMode = 0;
 int keyboardMode = 0;
 int glideSW = 0;
 int vcoBendSW = 0;
@@ -220,6 +245,10 @@ bool inPerformanceMode = false;
 static bool recallHeldToggleLatch = false;
 bool startedRenaming = false;
 int scaled = 0;
+int oldarpRate = 0;
+int oldarpRangeSW = 0;
+int oldarpModeSW = 0;
+
 
 bool encCW = true;  //This is to set the encoder to increment when turned CW - Settings Option
 bool announce = true;
@@ -284,6 +313,7 @@ int vcfLfoModDepthstr = 0;
 int ATDepthstr = 0;
 
 bool wholemode = true;
+bool oldwholemode = false;
 bool whole_button = true;
 bool dualmode = false;
 bool dual_button = false;

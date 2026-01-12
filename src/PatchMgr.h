@@ -73,25 +73,6 @@ int compare(const void *a, const void *b) {
   return ((PatchNoAndName*)a)->patchNo - ((PatchNoAndName*)b)->patchNo;
 }
 
-void sortPatches()
-{
-  int arraySize = patches.size();
-  //Sort patches buffer to be consecutive ascending patchNo order
-  struct PatchNoAndName arrayToSort[arraySize];
-
-  for (int i = 0; i < arraySize; ++i)
-  {
-    arrayToSort[i] = patches[i];
-  }
-  qsort(arrayToSort, arraySize, sizeof(PatchNoAndName), compare);
-  patches.clear();
-
-  for (int i = 0; i < arraySize; ++i)
-  {
-    patches.push(arrayToSort[i]);
-  }
-}
-
 void loadPatches()
 {
   File file = SD.open("/");
@@ -116,7 +97,7 @@ void loadPatches()
     }
     patchFile.close();
   }
-  sortPatches();
+  //sortPatches();
 }
 
 void savePatch(const char *patchNo, String patchData)
@@ -154,32 +135,3 @@ void savePatch(const char *patchNo, String patchData[])
   savePatch(patchNo, dataString);
 }
 
-void deletePatch(const char *patchNo)
-{
-  if (SD.exists(patchNo)) SD.remove(patchNo);
-}
-
-void renumberPatchesOnSD() {
-  for (int i = 0; i < patches.size(); i++)
-  {
-    String data[NO_OF_PARAMS]; //Array of data read in
-    File file = SD.open(String(patches[i].patchNo).c_str());
-    if (file) {
-      recallPatchData(file, data);
-      file.close();
-      savePatch(String(i + 1).c_str(), data);
-    }
-  }
-  deletePatch(String(patches.size() + 1).c_str()); //Delete final patch which is duplicate of penultimate patch
-}
-
-void setPatchesOrdering(int no) {
-  if (patches.size() < 2)return;
-  while (patches.first().patchNo != no) {
-    patches.push(patches.shift());
-  }
-}
-
-void resetPatchesOrdering() {
-  setPatchesOrdering(1);
-}

@@ -499,6 +499,22 @@ const uint8_t VOICE_LED_PIN[8] = {
   PATCH8_BUTTON_LED
 };
 
+struct LedRef {
+  Adafruit_MCP23017* mcp;  // or whatever your MCP class type is
+  uint8_t pin;
+}; 
+
+LedRef JP8_PERF_ROW_LED[8] = {
+  { &mcp5, PRESET1_BUTTON_LED },
+  { &mcp6, PRESET2_BUTTON_LED },
+  { &mcp6, PRESET3_BUTTON_LED },
+  { &mcp6, PRESET4_BUTTON_LED },
+  { &mcp6, PRESET5_BUTTON_LED },
+  { &mcp6, PRESET6_BUTTON_LED },
+  { &mcp6, PRESET7_BUTTON_LED },
+  { &mcp6, PRESET8_BUTTON_LED }
+};
+
 // System Switches etc
 
 #define MUX1_S A0  // ADC0
