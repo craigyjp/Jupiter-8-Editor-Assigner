@@ -8,6 +8,7 @@ bool waitingToUpdate = false;
 const unsigned long displayTimeout = 2000;  // e.g. 5 seconds
 
 // JP8 Hold
+// -------------------- HOLD CONFIG --------------------
 
 bool keyDownLower[128] = {0};
 bool keyDownUpper[128] = {0};
@@ -21,8 +22,8 @@ bool holdLatchedLower[128] = {0}; // notes sustaining because Hold caught their 
 bool holdLatchedUpper[128] = {0};
 
 // JP8 Arpeggiator
-
 // -------------------- ARP CONFIG --------------------
+
 enum ArpMode : uint8_t { ARP_OFF=0, ARP_UP, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM };
 enum ArpClockSrc : uint8_t { ARPCLK_INTERNAL=0, ARPCLK_EXTERNAL, ARPCLK_MIDI };
 
@@ -52,7 +53,6 @@ bool arpLowerOnlyWhenSplit = true;
 // Prevent arp notes from affecting hold/keyDown tracking
 bool arpInjecting = false;
 
-// -------------------- ARP PATTERN (JP-8 style) --------------------
 uint8_t arpPattern[8] = {0};
 uint8_t arpLen = 0;
 
@@ -83,7 +83,11 @@ uint8_t savedLowerKBMode = 0;
 uint8_t savedUpperKBMode = 0;
 bool arpForcedPoly2 = false;
 
-// JP8 style patch handling
+// JP8 STYLE PATCH HANDLING
+// -------------------- PATCH CONFIG --------------------
+
+static constexpr uint32_t PANEL_TO_PERF_TIMEOUT_MS = 5000;
+
 
 enum Jp8Target { JP8_TARGET_PATCH, JP8_TARGET_PERF };
 
@@ -139,11 +143,33 @@ bool bootInitInProgress = true;
 
 bool jp8PresetMode = false;
 
+static bool panelToPerfArmed = false;
+static bool panelToPerfHasTarget = false;
+static uint32_t panelToPerfMs = 0;
+static uint8_t panelToPerfTargetRC = 11;
+
+static uint8_t panelToPerfRow = 0;
+static uint8_t panelToPerfCol = 0;
+static uint8_t panelToPerfDigitState = JP8_SELECT_ROW;
+
 static constexpr uint8_t PERF_DEFAULT_SPLIT_POINT = 12; // 0..24
 static constexpr uint8_t PERF_DEFAULT_SPLIT_TRANS = 2;  // 0..4
 static constexpr uint8_t PERF_DEFAULT_VOL = 127;        // 0..127
 
-// Other stuff
+// VOLUME AND BALANCE
+// -------------------- DAC CONFIG --------------------
+
+#ifndef DAC_MAX_CODE
+#define DAC_MAX_CODE 4095u
+// #define DAC_MAX_CODE 2047u
+#endif
+
+#define POT_MAX     127u
+#define BAL_CENTER  63u
+#define Q15_ONE     32768u
+
+// OTHE STUFF
+// -------------------- CONFIG --------------------
 
 bool showMuxRead = true;
 bool manualMode = false;
@@ -165,6 +191,9 @@ int noteVel;
 int lastPlayedNote = -1;  // Track the last note played
 int lastPlayedVoice = 0;  // Track the voice of the last note played
 int lastUsedVoice = 0;    // Global variable to store the last used voice
+
+// SYNTH PARAMETERS
+// -------------------- SYNTH PARAM CONFIG --------------------
 
 int upperData[77];
 int lowerData[77];
@@ -252,7 +281,6 @@ int oldarpModeSW = 0;
 
 bool encCW = true;  //This is to set the encoder to increment when turned CW - Settings Option
 bool announce = true;
-// polykit parameters in order of mux
 
 String StratuslfoWaveform = "                ";
 

@@ -534,6 +534,9 @@ LedRef JP8_PERF_ROW_LED[8] = {
 #define ENCODER_PINA 5
 #define ENCODER_PINB 4
 
+#define CLK_PIN 34
+#define DAC_CS 10
+
 #define DEBOUNCE 30
 #define MUXCHANNELS 16
 #define QUANTISE_FACTOR 1
@@ -595,6 +598,11 @@ void setupHardware() {
   pinMode(SAVE_SW, INPUT_PULLUP);
   pinMode(SETTINGS_SW, INPUT_PULLUP);
   pinMode(BACK_SW, INPUT_PULLUP);
+
+  pinMode(CLK_PIN, INPUT_PULLUP);
+  pinMode(DAC_CS, OUTPUT);
+  digitalWrite(DAC_CS, HIGH);
+  
 }
 
 void setupMCPOutputs() {

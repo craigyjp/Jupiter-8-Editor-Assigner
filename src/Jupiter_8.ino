@@ -50,17 +50,17 @@ struct Performance {
   String name = "InitPerf";
   PlayMode mode = WHOLE;
 
-  uint8_t splitPoint = PERF_DEFAULT_SPLIT_POINT; // 0..24
-  uint8_t splitTrans = PERF_DEFAULT_SPLIT_TRANS; // 0..4
+  uint8_t splitPoint = PERF_DEFAULT_SPLIT_POINT;  // 0..24
+  uint8_t splitTrans = PERF_DEFAULT_SPLIT_TRANS;  // 0..4
 
-  uint8_t upperVol = PERF_DEFAULT_VOL;           // 0..127
-  uint8_t lowerVol = PERF_DEFAULT_VOL;           // 0..127
-  uint8_t upperBal = 63;                         // 0..127 (center ~63/64)
-  uint8_t lowerBal = 63;                         // 0..127
+  uint8_t upperVol = PERF_DEFAULT_VOL;  // 0..127
+  uint8_t lowerVol = PERF_DEFAULT_VOL;  // 0..127
+  uint8_t upperBal = 63;                // 0..127 (center ~63/64)
+  uint8_t lowerBal = 63;                // 0..127
 
   uint8_t arpRangeSW = 0;
-  uint8_t arpModeSW  = 0;
-  uint8_t arpRate    = 0;
+  uint8_t arpModeSW = 0;
+  uint8_t arpRate = 0;
   uint8_t arpClockSrc = 0;
 };
 
@@ -253,7 +253,6 @@ void setup() {
 
   delay(400);
 
-
   updateArpLEDs();
   patchNoU = 11;
   patchNoL = 11;
@@ -270,6 +269,93 @@ void setup() {
   suppressParamAnnounce = false;
   startParameterDisplay();
 }
+
+//DAC control
+
+void setVoltage(bool channel, bool gain, unsigned int mV) {
+  int command = channel ? 0x9000 : 0x1000;
+
+  command |= gain ? 0x0000 : 0x2000;
+  command |= (mV & 0x0FFF);
+
+  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(DAC_CS, LOW);
+  SPI.transfer(command >> 8);
+  SPI.transfer(command & 0xFF);
+  digitalWrite(DAC_CS, HIGH);
+  SPI.endTransaction();
+}
+
+static uint8_t clamp_u8(uint8_t v, uint8_t lo, uint8_t hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+static uint16_t pot_to_dac_code(uint8_t pot /*0..127*/, uint16_t dac_max /*2047 or 4095*/) {
+  pot = clamp_u8(pot, 0, POT_MAX);
+  uint32_t num = (uint32_t)pot * (uint32_t)dac_max + (POT_MAX / 2u);
+  return (uint16_t)(num / POT_MAX);
+}
+
+static uint16_t apply_q15(uint16_t code, uint16_t gain_q15 /*0..32768*/) {
+  uint32_t num = (uint32_t)code * (uint32_t)gain_q15 + (1u << 14);
+  uint32_t out = num >> 15;
+  if (out > 0xFFFFu) out = 0xFFFFu;
+  return (uint16_t)out;
+}
+
+static void balance_gains_q15(uint8_t bal /*0..127*/, uint16_t *upper_gain, uint16_t *lower_gain) {
+  bal = clamp_u8(bal, 0, POT_MAX);
+
+  if (bal == BAL_CENTER) {
+    *upper_gain = Q15_ONE;
+    *lower_gain = Q15_ONE;
+    return;
+  }
+
+    if (bal > BAL_CENTER) {
+    // Favor upper: upper stays 1.0, lower attenuates 1.0 -> 0.0 as 63 -> 127
+    const uint32_t denom = (POT_MAX - BAL_CENTER); // 64
+    const uint32_t numer = (POT_MAX - bal);        // 64..0
+    const uint32_t g = (numer * Q15_ONE + (denom / 2u)) / denom;
+    *upper_gain = Q15_ONE;
+    *lower_gain = (uint16_t)g;
+    return;
+  }
+
+  // Favor lower: lower stays 1.0, upper attenuates 1.0 -> 0.0 as 63 -> 0
+  {
+    const uint32_t denom = BAL_CENTER; // 63
+    const uint32_t numer = bal;        // 0..62
+    const uint32_t g = (numer * Q15_ONE + (denom / 2u)) / denom;
+    *upper_gain = (uint16_t)g;
+    *lower_gain = Q15_ONE;
+  }
+}
+
+void applyVolumeBalanceToDacs(PlayMode mode) {
+  const uint8_t vol = clamp_u8(upperData[P_volume], 0, POT_MAX);
+  const uint8_t bal = clamp_u8(upperData[P_balance], 0, POT_MAX);
+
+  const uint16_t base = pot_to_dac_code(vol, (uint16_t)DAC_MAX_CODE);
+
+  uint16_t upper_code = base;
+  uint16_t lower_code = base;
+
+  if (mode != WHOLE) {
+    uint16_t ug = Q15_ONE, lg = Q15_ONE;
+    balance_gains_q15(bal, &ug, &lg);
+    upper_code = apply_q15(base, ug);
+    lower_code = apply_q15(base, lg);
+  }
+
+  setVoltage(0, 0, upper_code);
+  setVoltage(1, 0, lower_code);
+
+}
+
+// MUX disable on boot
 
 void primeMuxBaseline() {
   for (int ch = 0; ch < MUXCHANNELS; ch++) {
@@ -1179,9 +1265,7 @@ void handleJp8PatchDigit(uint8_t digit) {
   // - PATCHNAMING when naming-from-store (change destination)
   // - PARAMETER (both patch mode and performance mode)
   const bool allow =
-      (state == JP8_STORE_SELECT) ||
-      (state == PATCHNAMING && jp8NamingFromStore) ||
-      (state == PARAMETER);
+    (state == JP8_STORE_SELECT) || (state == PATCHNAMING && jp8NamingFromStore) || (state == PARAMETER);
 
   if (!allow) return;
 
@@ -1240,8 +1324,7 @@ void handleJp8PatchDigit(uint8_t digit) {
       currentPerformance.upperPatchNo,
       getPatchName(currentPerformance.upperPatchNo),
       currentPerformance.lowerPatchNo,
-      getPatchName(currentPerformance.lowerPatchNo)
-    );
+      getPatchName(currentPerformance.lowerPatchNo));
   }
 
   updateScreen();
@@ -1269,19 +1352,19 @@ void ensureJP8PerformanceBankInitialized() {
   }
 
   Performance defaultPerf;
-  defaultPerf.performanceNo = 11;   // overwritten per slot
+  defaultPerf.performanceNo = 11;  // overwritten per slot
   defaultPerf.upperPatchNo = 11;
   defaultPerf.lowerPatchNo = 11;
   defaultPerf.name = "InitPerf";
   defaultPerf.mode = WHOLE;
 
   // NEW defaults (match your ranges)
-  defaultPerf.splitPoint = 12;      // 0..24
-  defaultPerf.splitTrans = 0;       // 0..4
-  defaultPerf.upperVol = 127;       // 0..127
-  defaultPerf.lowerVol = 127;       // 0..127
-  defaultPerf.upperBal = 0;         // -63..+63
-  defaultPerf.lowerBal = 0;         // -63..+63
+  defaultPerf.splitPoint = 12;  // 0..24
+  defaultPerf.splitTrans = 0;   // 0..4
+  defaultPerf.upperVol = 127;   // 0..127
+  defaultPerf.lowerVol = 127;   // 0..127
+  defaultPerf.upperBal = 0;     // -63..+63
+  defaultPerf.lowerBal = 0;     // -63..+63
 
   defaultPerf.arpRangeSW = 0;
   defaultPerf.arpModeSW = 0;
@@ -1412,14 +1495,14 @@ static inline int clampInt(int v, int lo, int hi) {
 // Conceptual balance: -63..+63 (stored in Performance as int8_t)
 static inline int8_t decodeBalance0_127_to_m63_p63(int v0_127) {
   v0_127 = clampInt(v0_127, 0, 127);
-  int b = v0_127 - 63;          // 0->-63, 63->0, 126->+63, 127->+64 (clamped below)
+  int b = v0_127 - 63;  // 0->-63, 63->0, 126->+63, 127->+64 (clamped below)
   b = clampInt(b, -63, 63);
   return (int8_t)b;
 }
 
 static inline uint8_t encodeBalance_m63_p63_to_0_127(int8_t b_m63_p63) {
   int b = clampInt((int)b_m63_p63, -63, 63);
-  int v = b + 63;               // -63->0, 0->63, +63->126
+  int v = b + 63;  // -63->0, 0->63, +63->126
   v = clampInt(v, 0, 127);
   return (uint8_t)v;
 }
@@ -1431,7 +1514,7 @@ static inline uint8_t clampU8(long v, uint8_t lo, uint8_t hi, uint8_t def) {
 
 static inline void capturePerformanceExtrasFromEngine(Performance &p) {
   p.splitPoint = clampU8(splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT);
-  p.splitTrans = clampU8(splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS);
+  p.splitTrans = clampU8(splitTrans, 0, 4, PERF_DEFAULT_SPLIT_TRANS);
 
   p.upperVol = clampU8(upperData[P_volume], 0, 127, PERF_DEFAULT_VOL);
   p.lowerVol = clampU8(lowerData[P_volume], 0, 127, PERF_DEFAULT_VOL);
@@ -1439,15 +1522,15 @@ static inline void capturePerformanceExtrasFromEngine(Performance &p) {
   p.upperBal = clampU8(upperData[P_balance], 0, 127, 63);
   p.lowerBal = clampU8(lowerData[P_balance], 0, 127, 63);
 
-  p.arpRangeSW  = clampU8(lowerData[P_arpRangeSW], 0, 127, 0);
-  p.arpModeSW   = clampU8(lowerData[P_arpModeSW],  0, 127, 0);
-  p.arpRate     = clampU8(lowerData[P_arpRate],    0, 127, 0);
+  p.arpRangeSW = clampU8(lowerData[P_arpRangeSW], 0, 127, 0);
+  p.arpModeSW = clampU8(lowerData[P_arpModeSW], 0, 127, 0);
+  p.arpRate = clampU8(lowerData[P_arpRate], 0, 127, 0);
   p.arpClockSrc = (uint8_t)arpClockSrc;
 }
 
 static inline void applyPerformanceExtrasToEngine(const Performance &p) {
   splitPoint = clampU8(p.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT);
-  splitTrans = clampU8(p.splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS);
+  splitTrans = clampU8(p.splitTrans, 0, 4, PERF_DEFAULT_SPLIT_TRANS);
 
   upperData[P_volume] = clampU8(p.upperVol, 0, 127, PERF_DEFAULT_VOL);
   lowerData[P_volume] = clampU8(p.lowerVol, 0, 127, PERF_DEFAULT_VOL);
@@ -1456,15 +1539,15 @@ static inline void applyPerformanceExtrasToEngine(const Performance &p) {
   lowerData[P_balance] = clampU8(p.lowerBal, 0, 127, 63);
 
   lowerData[P_arpRangeSW] = p.arpRangeSW;
-  lowerData[P_arpModeSW]  = p.arpModeSW;
-  lowerData[P_arpRate]    = p.arpRate;
+  lowerData[P_arpModeSW] = p.arpModeSW;
+  lowerData[P_arpRate] = p.arpRate;
   uint8_t src = clampU8(p.arpClockSrc, 0, 2, (uint8_t)ARPCLK_INTERNAL);
   arpClockSrc = (ArpClockSrc)src;
 
   updatearpRate(0);
   updateArpRange(0);
   updateArpMode(0);
-
+  updateplayMode(0);
 }
 
 // Handling encoders and buttons
@@ -1495,7 +1578,8 @@ void mainButtonChanged(Button *btn, bool released) {
     case DUAL_BUTTON:
       if (!released) {
         dual_button = true;
-        dualmode = true;
+        playMode = 1;
+        wholemode = false;
         myControlChange(midiChannel, CCdual_button, dual_button);
       }
       break;
@@ -1503,7 +1587,8 @@ void mainButtonChanged(Button *btn, bool released) {
     case SPLIT_BUTTON:
       if (!released) {
         split_button = true;
-        splitmode = true;
+        playMode = 2;
+        wholemode = false;
         myControlChange(midiChannel, CCsplit_button, split_button);
       }
       break;
@@ -1511,6 +1596,7 @@ void mainButtonChanged(Button *btn, bool released) {
     case WHOLE_BUTTON:
       if (!released) {
         whole_button = true;
+        playMode = 0;
         wholemode = true;
         myControlChange(midiChannel, CCwhole_button, whole_button);
       }
@@ -1875,23 +1961,36 @@ void savePerformanceRC(uint8_t rc, const Performance &perfIn) {
   // v2: v2,upper,lower,name,mode,splitPoint,splitTrans,upperVol,lowerVol,upperBal,lowerBal,arpRangeSW,arpModeSW,arpRate,arpClockSrc
   file.print("v2,");
 
-  file.print((int)perf.upperPatchNo); file.print(",");
-  file.print((int)perf.lowerPatchNo); file.print(",");
-  file.print(perf.name);             file.print(",");
-  file.print((int)perf.mode);        file.print(",");
+  file.print((int)perf.upperPatchNo);
+  file.print(",");
+  file.print((int)perf.lowerPatchNo);
+  file.print(",");
+  file.print(perf.name);
+  file.print(",");
+  file.print((int)perf.mode);
+  file.print(",");
 
-  file.print((int)clampU8(perf.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT)); file.print(",");
-  file.print((int)clampU8(perf.splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS)); file.print(",");
+  file.print((int)clampU8(perf.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT));
+  file.print(",");
+  file.print((int)clampU8(perf.splitTrans, 0, 4, PERF_DEFAULT_SPLIT_TRANS));
+  file.print(",");
 
-  file.print((int)clampU8(perf.upperVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
-  file.print((int)clampU8(perf.lowerVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
+  file.print((int)clampU8(perf.upperVol, 0, 127, PERF_DEFAULT_VOL));
+  file.print(",");
+  file.print((int)clampU8(perf.lowerVol, 0, 127, PERF_DEFAULT_VOL));
+  file.print(",");
 
-  file.print((int)clampU8(perf.upperBal, 0, 127, 63)); file.print(",");
-  file.print((int)clampU8(perf.lowerBal, 0, 127, 63)); file.print(",");
+  file.print((int)clampU8(perf.upperBal, 0, 127, 63));
+  file.print(",");
+  file.print((int)clampU8(perf.lowerBal, 0, 127, 63));
+  file.print(",");
 
-  file.print((int)clampU8(perf.arpRangeSW, 0, 127, 0)); file.print(",");
-  file.print((int)clampU8(perf.arpModeSW,  0, 127, 0)); file.print(",");
-  file.print((int)clampU8(perf.arpRate,    0, 127, 0)); file.print(",");
+  file.print((int)clampU8(perf.arpRangeSW, 0, 127, 0));
+  file.print(",");
+  file.print((int)clampU8(perf.arpModeSW, 0, 127, 0));
+  file.print(",");
+  file.print((int)clampU8(perf.arpRate, 0, 127, 0));
+  file.print(",");
   file.println((int)clampU8(perf.arpClockSrc, 0, 2, (uint8_t)ARPCLK_INTERNAL));
 
   file.close();
@@ -1919,8 +2018,8 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
   if (line.startsWith("v2,")) {
     const String upperS = fieldOrEmpty(1);
     const String lowerS = fieldOrEmpty(2);
-    const String nameS  = fieldOrEmpty(3);
-    const String modeS  = fieldOrEmpty(4);
+    const String nameS = fieldOrEmpty(3);
+    const String modeS = fieldOrEmpty(4);
 
     if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
 
@@ -1930,30 +2029,30 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
     out.mode = (PlayMode)modeS.toInt();
 
     // Optional fields: only overwrite defaults if present
-    const String spS  = fieldOrEmpty(5);
-    const String stS  = fieldOrEmpty(6);
-    const String uvS  = fieldOrEmpty(7);
-    const String lvS  = fieldOrEmpty(8);
-    const String ubS  = fieldOrEmpty(9);
-    const String lbS  = fieldOrEmpty(10);
-    const String arS  = fieldOrEmpty(11);
-    const String amS  = fieldOrEmpty(12);
-    const String atS  = fieldOrEmpty(13);
-    const String acS  = fieldOrEmpty(14);
+    const String spS = fieldOrEmpty(5);
+    const String stS = fieldOrEmpty(6);
+    const String uvS = fieldOrEmpty(7);
+    const String lvS = fieldOrEmpty(8);
+    const String ubS = fieldOrEmpty(9);
+    const String lbS = fieldOrEmpty(10);
+    const String arS = fieldOrEmpty(11);
+    const String amS = fieldOrEmpty(12);
+    const String atS = fieldOrEmpty(13);
+    const String acS = fieldOrEmpty(14);
 
     if (spS.length()) out.splitPoint = clampU8(spS.toInt(), 0, 24, PERF_DEFAULT_SPLIT_POINT);
-    if (stS.length()) out.splitTrans = clampU8(stS.toInt(), 0, 4,  PERF_DEFAULT_SPLIT_TRANS);
+    if (stS.length()) out.splitTrans = clampU8(stS.toInt(), 0, 4, PERF_DEFAULT_SPLIT_TRANS);
 
     if (uvS.length()) out.upperVol = clampU8(uvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
     if (lvS.length()) out.lowerVol = clampU8(lvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
 
-    if (ubS.length()) out.upperBal = clampU8(csvGetField(line, 9).toInt(),  0, 127, 63);
-    if (lbS.length()) out.lowerBal = clampU8(csvGetField(line, 9).toInt(),  0, 127, 63);
+    if (ubS.length()) out.upperBal = clampU8(csvGetField(line, 9).toInt(), 0, 127, 63);
+    if (lbS.length()) out.lowerBal = clampU8(csvGetField(line, 9).toInt(), 0, 127, 63);
 
-    if (arS.length()) out.arpRangeSW  = clampU8(arS.toInt(), 0, 127, 0);
-    if (amS.length()) out.arpModeSW   = clampU8(amS.toInt(), 0, 127, 0);
-    if (atS.length()) out.arpRate     = clampU8(atS.toInt(), 0, 127, 0);
-    if (acS.length()) out.arpClockSrc = clampU8(csvGetField(line,14).toInt(), 0, 2, (uint8_t)ARPCLK_INTERNAL);
+    if (arS.length()) out.arpRangeSW = clampU8(arS.toInt(), 0, 127, 0);
+    if (amS.length()) out.arpModeSW = clampU8(amS.toInt(), 0, 127, 0);
+    if (atS.length()) out.arpRate = clampU8(atS.toInt(), 0, 127, 0);
+    if (acS.length()) out.arpClockSrc = clampU8(csvGetField(line, 14).toInt(), 0, 2, (uint8_t)ARPCLK_INTERNAL);
 
     return true;
   }
@@ -1961,8 +2060,8 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
   // ---- v1 legacy: upper,lower,name,mode ----
   const String upperS = fieldOrEmpty(0);
   const String lowerS = fieldOrEmpty(1);
-  const String nameS  = fieldOrEmpty(2);
-  const String modeS  = fieldOrEmpty(3);
+  const String nameS = fieldOrEmpty(2);
+  const String modeS = fieldOrEmpty(3);
 
   if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
 
@@ -2002,6 +2101,10 @@ void applyPerformance(const Performance &p) {
 
   playMode = p.mode;
   wholemode = (playMode == WHOLE);
+  // Serial.print("Playmode ");
+  // Serial.println(playMode);
+  // Serial.print("WholeMode ");
+  // Serial.println(wholemode);
   updateplayMode(0);
 
   upperSW = true;
@@ -2051,9 +2154,45 @@ static inline void ledWrite(const LedRef &led, bool on) {
   led.mcp->digitalWrite(led.pin, on ? HIGH : LOW);
 }
 
-void handleJp8PresetDigit(uint8_t digit) {  // 1..8
-  if (!jp8PresetMode) return;
+void handleJp8PresetDigit(uint8_t digit) {  // 1..8 from PERFORMANCE digit buttons
   if (digit < 1 || digit > 8) return;
+
+  if (panelToPerfArmed) {
+    panelToPerfMs = millis();  // refresh timeout
+
+    // First digit = row
+    if (panelToPerfDigitState == JP8_SELECT_ROW) {
+      panelToPerfRow = digit;
+      panelToPerfDigitState = JP8_SELECT_COL;
+
+      perfClearRowLeds();
+      perfLedWriteDigit(digit, true);
+
+      updateScreen();
+      return;
+    }
+
+    // Second digit = col
+    panelToPerfCol = digit;
+    panelToPerfDigitState = JP8_SELECT_ROW;
+
+    perfClearRowLeds();
+
+    const uint8_t rc = (uint8_t)(panelToPerfRow * 10 + panelToPerfCol);
+    if (!jp8_isValidRC(rc)) return;
+
+    panelToPerfTargetRC = rc;
+    panelToPerfHasTarget = true;
+
+    updateScreen();
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // NORMAL performance-digit behavior (performance mode)
+  // ------------------------------------------------------------
+
+  if (!jp8PresetMode) return;
 
   const bool allow =
     (state == PERFORMANCE_SAVE) || (state == PERFORMANCE_NAMING && perfNamingFromStore) || (state == PARAMETER && inPerformanceMode);
@@ -2103,6 +2242,7 @@ void handleJp8PresetDigit(uint8_t digit) {  // 1..8
   lastPerfRC = rc;
   exitManualModeIfActive();
   recallPerformanceRC(rc);
+  updateScreen();
 }
 
 void editControlChange(byte channel, byte control, byte value) {
@@ -3768,12 +3908,11 @@ void updatevolume(boolean announce) {
     showCurrentParameterPage("Volume", int(volumestr));
     startParameterDisplay();
   }
-  if (upperSW) {
-    midiCCOut(CCvolume, upperData[P_volume]);
 
-  } else {
-    midiCCOut(CCvolume, lowerData[P_volume]);
-  }
+  // Always keep upper/lower volumes identical.
+  const uint8_t v = upperSW ? upperData[P_volume] : lowerData[P_volume];
+  upperData[P_volume] = v;
+  lowerData[P_volume] = v;
 }
 
 void updatebalance(boolean announce) {
@@ -3781,19 +3920,30 @@ void updatebalance(boolean announce) {
     showCurrentParameterPage("Balance", int(balancestr));
     startParameterDisplay();
   }
-  if (upperSW) {
-    midiCCOut(CCbalance, upperData[P_balance]);
 
+  uint8_t b;
+  if (wholemode) {
+    b = BAL_CENTER;
   } else {
-    midiCCOut(CCbalance, lowerData[P_balance]);
+    // One shared balance value; pick the active edit target.
+    b = upperSW ? upperData[P_balance] : lowerData[P_balance];
+  }
+
+  upperData[P_balance] = b;
+  lowerData[P_balance] = b;
+
+  // MIDI: in wholemode, keep external state centered; otherwise send whichever you consider "active".
+  if (wholemode) {
+    midiCCOut(CCbalance, b);
+  } else {
+    midiCCOut(CCbalance, b);
   }
 }
 
 // // ////////////////////////////////////////////////////////////////
 
 void updatedual_button(boolean announce) {
-  if (dualmode) {
-    playMode = 1;
+  if (playMode == 1) {
     if (announce && !suppressParamAnnounce) {
       showCurrentParameterPage("Key Mode", "Dual");
       startParameterDisplay();
@@ -3808,8 +3958,7 @@ void updatedual_button(boolean announce) {
 }
 
 void updatewhole_button(boolean announce) {
-  if (wholemode) {
-    playMode = 0;
+  if (playMode == 0) {
     if (announce && !suppressParamAnnounce) {
       showCurrentParameterPage("Key Mode", "Whole");
       startParameterDisplay();
@@ -3827,8 +3976,7 @@ void updatewhole_button(boolean announce) {
 }
 
 void updatesplit_button(boolean announce) {
-  if (splitmode) {
-    playMode = 2;
+  if (playMode == 2) {
     if (announce && !suppressParamAnnounce) {
       showCurrentParameterPage("Key Mode", "Split");
       startParameterDisplay();
@@ -6390,6 +6538,52 @@ static inline void jp8QuickSavePatchToCurrentSlot() {
   updateScreen();
 }
 
+static inline void cancelPanelToPerf() {
+  panelToPerfArmed = false;
+  panelToPerfHasTarget = false;
+  panelToPerfDigitState = JP8_SELECT_ROW;
+  panelToPerfRow = 0;
+  panelToPerfCol = 0;
+}
+
+static inline uint8_t safeRC(uint8_t rc) {
+  return jp8_isValidRC(rc) ? rc : 11;
+}
+
+// Build performance from current "panel" setup (current patches, mode, extras)
+static inline Performance buildPerformanceFromPanel(uint8_t targetPerfRc) {
+  Performance p;
+  p.performanceNo = targetPerfRc;
+
+  // Use current selected patch slots
+  const uint8_t u = safeRC(upperSlotRC);
+  const uint8_t l = safeRC(lowerSlotRC);
+
+  // Whole mode: store one patch (keep both same for a stable performance)
+  if (wholemode) {
+    p.upperPatchNo = l;
+    p.lowerPatchNo = l;
+  } else {
+    p.upperPatchNo = u;
+    p.lowerPatchNo = l;
+  }
+
+  p.mode = (PlayMode)playMode;
+
+  // Keep existing perf name if overwriting, else default
+  Performance existing;
+  if (loadPerformanceRC(targetPerfRc, existing) && existing.name.length()) {
+    p.name = existing.name;
+  } else {
+    p.name = "perf" + String(targetPerfRc);
+  }
+
+  // Capture split/vol/bal/arp etc from live engine state
+  capturePerformanceExtrasFromEngine(p);
+
+  return p;
+}
+
 // Performance quick save (to current performance slot, same name)
 static inline uint8_t perfActiveRC() {
   uint8_t rc = (uint8_t)currentPerformance.performanceNo;
@@ -6423,8 +6617,7 @@ static inline void syncPerformanceDisplayForTarget(uint8_t targetRc) {
     currentPerformance.upperPatchNo,
     getPatchName(currentPerformance.upperPatchNo),
     currentPerformance.lowerPatchNo,
-    getPatchName(currentPerformance.lowerPatchNo)
-  );
+    getPatchName(currentPerformance.lowerPatchNo));
 }
 
 static inline void enterPerformanceStoreSelectFromCurrent() {
@@ -6520,17 +6713,62 @@ void checkSwitches() {
   saveButton.update();
 
   if (saveButton.held()) {
-    saveHeldLatch = true;
+    if (!saveHeldLatch) {
+      saveHeldLatch = true;
 
-    if (jp8Mode && !inPerformanceMode) {
-      jp8QuickSavePatchToCurrentSlot();
-    } else if (jp8Mode && inPerformanceMode) {
-      jp8QuickSavePerformanceToCurrentSlot();
-    } else {
-      // do nothing
+      // Only arm from patch mode on main pages
+      if (jp8Mode && !inPerformanceMode && (state == PARAMETER || state == PATCH)) {
+        panelToPerfArmed = true;
+        panelToPerfHasTarget = false;
+        panelToPerfMs = millis();
+
+        panelToPerfDigitState = JP8_SELECT_ROW;
+        panelToPerfRow = 0;
+        panelToPerfCol = 0;
+
+        // UI message (use whatever you prefer)
+        showCurrentParameterPage("Save Panel to Perf", "Enter ## then SAVE");
+        startParameterDisplay();
+        updateScreen();
+      }
     }
+  } else {
     saveHeldLatch = false;
-  } else if (saveButton.numClicks() == 1) {
+  }
+
+  // Timeout cancels armed mode
+  if (panelToPerfArmed && (millis() - panelToPerfMs > PANEL_TO_PERF_TIMEOUT_MS)) {
+    cancelPanelToPerf();
+    // Optional: clear message / return to normal display
+    refreshPatchDisplayFromState();
+    updateScreen();
+  }
+
+  if (saveButton.numClicks() == 1) {
+
+    // If armed + target chosen, SAVE executes write
+    if (panelToPerfArmed) {
+      if (panelToPerfHasTarget && jp8_isValidRC(panelToPerfTargetRC)) {
+        Performance p = buildPerformanceFromPanel(panelToPerfTargetRC);
+        savePerformanceRC(panelToPerfTargetRC, p);
+        lastPerfRC = panelToPerfTargetRC;
+
+        cancelPanelToPerf();
+
+        // Optional confirmation (silent? just return)
+        showCurrentParameterPage("Saved to Perf", String(panelToPerfTargetRC));
+        startParameterDisplay();
+
+        refreshPatchDisplayFromState();
+        updateScreen();
+      } else {
+        // Armed but no target yet: do nothing (or prompt again)
+        showCurrentParameterPage("Save Panel to Perf", "Enter ## then SAVE");
+        startParameterDisplay();
+        updateScreen();
+      }
+      return;
+    }
 
     // JP-8 patch-mode save workflow (no legacy SAVE state)
     if (jp8Mode && !inPerformanceMode) {
@@ -6621,6 +6859,14 @@ void checkSwitches() {
     allNotesOff();
     updateScreen();
   } else if (backButton.numClicks() == 1) {
+
+    if (panelToPerfArmed) {
+      cancelPanelToPerf();
+      refreshPatchDisplayFromState();
+      updateScreen();
+      return;
+    }
+
     switch (state) {
       // Cancel save UI only; keep edited patch live (no recall/reload)
       case JP8_STORE_SELECT:
@@ -6742,7 +6988,7 @@ void checkSwitches() {
         updateplayMode(0);
 
         if (upperSW) {
-        recallPatch(safeRC(lastPatchRC_U));
+          recallPatch(safeRC(lastPatchRC_U));
         } else {
           recallPatch(safeRC(lastPatchRC_L));
         }
@@ -7112,6 +7358,7 @@ void loop() {
   usbMIDI.read(midiChannel);
   jp8UpdateFirstDigitLed();
   arpEngine();
+  applyVolumeBalanceToDacs((PlayMode)playMode);
 
   if (waitingToUpdate && (millis() - lastDisplayTriggerTime >= displayTimeout)) {
     updateScreen();  // retrigger
