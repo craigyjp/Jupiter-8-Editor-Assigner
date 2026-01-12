@@ -20,6 +20,7 @@ The VCF Bend is not practical to implement so I've replaced that with aftertouch
 
 # Things to do
 
+* General bug fixes/features as I find them.
 * Add the external arpeggiator clock
 * Build the mixer section and DAC control.
 
