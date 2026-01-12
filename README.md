@@ -20,8 +20,7 @@ The VCF Bend is not practical to implement so I've replaced that with aftertouch
 
 # Things to do
 
-* Add the MIDI clock and external clock
-* Add the performances
+* Add the external arpeggiator clock
 * Build the mixer section and DAC control.
 
 
