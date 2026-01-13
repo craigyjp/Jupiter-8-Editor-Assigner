@@ -24,6 +24,21 @@ bool holdLatchedUpper[128] = {0};
 // JP8 Arpeggiator
 // -------------------- ARP CONFIG --------------------
 
+// External clock pulse handling
+volatile uint16_t arpExtTickCount = 0;
+volatile uint32_t lastExtPulseUs = 0;
+const uint16_t ARP_EXT_CLOCK_LOSS_MS = 250;
+
+// Debounce / minimum pulse spacing (microseconds)
+const uint32_t EXT_PULSE_MIN_US = 1500;
+
+// LED flash request from ISR
+volatile bool extClkLedPulseReq = false;
+volatile uint32_t extClkLedPulseAtMs = 0;
+
+// LED pulse width (ms)
+const uint16_t EXT_LED_PULSE_MS = 30;
+
 enum ArpMode : uint8_t { ARP_OFF=0, ARP_UP, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM };
 enum ArpClockSrc : uint8_t { ARPCLK_INTERNAL=0, ARPCLK_EXTERNAL, ARPCLK_MIDI };
 

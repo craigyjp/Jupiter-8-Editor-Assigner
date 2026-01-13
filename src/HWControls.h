@@ -599,7 +599,6 @@ void setupHardware() {
   pinMode(SETTINGS_SW, INPUT_PULLUP);
   pinMode(BACK_SW, INPUT_PULLUP);
 
-  pinMode(CLK_PIN, INPUT_PULLUP);
   pinMode(DAC_CS, OUTPUT);
   digitalWrite(DAC_CS, HIGH);
   

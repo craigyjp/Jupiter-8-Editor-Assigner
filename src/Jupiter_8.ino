@@ -131,7 +131,22 @@ void pollAllMCPs();
 
 void initButtons();
 
+void onExtClockPulse() {
+  if (arpClockSrc != ARPCLK_EXTERNAL) return;
+
+  uint32_t nowUs = micros();
+  if ((uint32_t)(nowUs - lastExtPulseUs) < EXT_PULSE_MIN_US) return;
+  lastExtPulseUs = nowUs;
+
+  arpExtTickCount++;            // 1 pulse = 1 step
+  extClkLedPulseReq = true;     // handled in loop()
+  extClkLedPulseAtMs = millis();
+}
+
 void setup() {
+
+  pinMode(CLK_PIN, INPUT_PULLUP);  // best if your MCU supports it
+  attachInterrupt(digitalPinToInterrupt(CLK_PIN), onExtClockPulse, FALLING);
 
   suppressParamAnnounce = true;
   bootInitInProgress = true;
@@ -380,6 +395,35 @@ void startParameterDisplay() {
 }
 
 // Arpeggiator
+
+void serviceArpClockLoss() {
+
+  if (arpMode == ARP_OFF) return;
+
+  // Only relevant for external clock source
+  if (arpClockSrc != ARPCLK_EXTERNAL) return;
+
+  // If no arp note is currently sounding, nothing to do
+  if (!arpNoteActive) return;
+
+  // If we've never seen a pulse, don't force-off
+  if (lastExtPulseUs == 0) return;
+
+  uint32_t nowMs = millis();
+  uint32_t lastPulseMs = lastExtPulseUs / 1000u;
+
+  if ((uint32_t)(nowMs - lastPulseMs) > ARP_EXT_CLOCK_LOSS_MS) {
+    // Clock stopped: kill the held arp note
+    arpStopCurrent();
+    arpNoteActive = false;
+
+    // Prevent queued ticks from retriggering later
+    arpExtTickCount = 0;
+
+    // Optional: mark not running
+    arpRunning = false;
+  }
+}
 
 inline bool arpNotePresentLower(uint8_t n) {
   return keyDownLower[n] || holdLatchedLower[n];
@@ -648,29 +692,62 @@ void arpEngine() {
   arpRunning = true;
 }
 
-void onArpExternalClockPulse() {
-  if (arpClockSrc != ARPCLK_EXTERNAL) return;
-  arpClkTickCount++;
-}
-
 bool arpShouldStepNow() {
 
   if (arpClockSrc == ARPCLK_INTERNAL) {
-    return arpShouldStepNow_InternalSmooth();  // your existing smooth internal
+    return arpShouldStepNow_InternalSmooth();
   }
 
   if (arpClockSrc == ARPCLK_MIDI) {
-    if (!midiClockRunning) return false;  // wait for Start/Continue
+    if (!midiClockRunning) return false;
+    if (arpTicksPerStep == 0) arpTicksPerStep = 1;
+    if (arpClkTickCount >= arpTicksPerStep) {
+      arpClkTickCount = 0;
+      return true;
+    }
+    return false;
   }
 
-  if (arpTicksPerStep == 0) arpTicksPerStep = 1;
-
-  if (arpClkTickCount >= arpTicksPerStep) {
-    arpClkTickCount = 0;
+  // EXTERNAL: 1 pulse = 1 step
+  if (arpExtTickCount > 0) {
+    arpExtTickCount = 0;
     return true;
   }
 
   return false;
+}
+
+void serviceExternalClockLed() {
+
+  static bool ledOn = false;
+  static uint32_t ledOffAtMs = 0;
+
+  // Only show the red LED for external clock mode
+  if (arpClockSrc != ARPCLK_EXTERNAL) {
+    if (ledOn) {
+      mcp2.digitalWrite(ARP_CLK_LED_RED, LOW);
+      ledOn = false;
+    }
+    return;
+  }
+
+  // If ISR requested a pulse, turn LED on and set an off time
+  if (extClkLedPulseReq) {
+    noInterrupts();
+    extClkLedPulseReq = false;
+    uint32_t t = extClkLedPulseAtMs;
+    interrupts();
+
+    mcp2.digitalWrite(ARP_CLK_LED_RED, HIGH);
+    ledOn = true;
+    ledOffAtMs = t + EXT_LED_PULSE_MS;
+  }
+
+  // Turn off after pulse width
+  if (ledOn && (int32_t)(millis() - ledOffAtMs) >= 0) {
+    mcp2.digitalWrite(ARP_CLK_LED_RED, LOW);
+    ledOn = false;
+  }
 }
 
 inline void setArpMode(ArpMode m) {
@@ -850,6 +927,9 @@ inline void setArpClockSrc(ArpClockSrc src) {
   arpLastStepMs = millis();
   arpPos = -1;
   arpDir = +1;
+  arpExtTickCount = 0;
+  lastExtPulseUs = 0;
+  extClkLedPulseReq = false;
 
   // Stop any sounding arp note on clock change
   if (arpNoteActive) arpStopCurrent();
@@ -7357,6 +7437,8 @@ void loop() {
   MIDI7.read();
   usbMIDI.read(midiChannel);
   jp8UpdateFirstDigitLed();
+  serviceExternalClockLed();
+  serviceArpClockLoss();
   arpEngine();
   applyVolumeBalanceToDacs((PlayMode)playMode);
 
