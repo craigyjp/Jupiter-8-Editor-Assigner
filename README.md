@@ -18,11 +18,13 @@ The JP-08 modules have portamento, delay and chorus effects that are hidden from
 
 The VCF Bend is not practical to implement so I've replaced that with aftertouch depth and destinations.
 
+I created a perl script to convert the factory JP-08 patches to the same format as my editor and loaded all the original 64 jupiter 8 patches.
+
 # Things to do
 
 * General bug fixes/features as I find them.
-* Add the external arpeggiator clock
-* Build the mixer section and DAC control.
+* Fix the sustain pedal input.
+
 
 
 
