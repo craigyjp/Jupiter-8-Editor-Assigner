@@ -22,6 +22,7 @@ I created a perl script to convert the factory JP-08 patches to the same format 
 
 # Things to do
 
+* possibly switch to sysex for 0-255 parameter changes for better resolution.
 * General bug fixes/features as I find them.
 * Fix the sustain pedal input.
 
