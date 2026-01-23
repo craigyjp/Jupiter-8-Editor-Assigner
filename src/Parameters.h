@@ -207,6 +207,13 @@ int lastPlayedNote = -1;  // Track the last note played
 int lastPlayedVoice = 0;  // Track the voice of the last note played
 int lastUsedVoice = 0;    // Global variable to store the last used voice
 
+// Banks selection
+// ---------------------Banks----------------------------------
+
+static constexpr uint8_t BANK_COUNT = 16;   // set 16 if you want
+static uint8_t activeBank = 0;            // 0..BANK_COUNT-1
+static uint8_t bankPreview = 0;
+
 // SYNTH PARAMETERS
 // -------------------- SYNTH PARAM CONFIG --------------------
 
@@ -292,6 +299,7 @@ int scaled = 0;
 int oldarpRate = 0;
 int oldarpRangeSW = 0;
 int oldarpModeSW = 0;
+int value = 0;
 
 
 bool encCW = true;  //This is to set the encoder to increment when turned CW - Settings Option

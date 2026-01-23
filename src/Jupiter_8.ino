@@ -32,7 +32,9 @@ enum UiState : uint8_t {
   PERFORMANCE_NAMING = 13,
 
   JP8_RECALL_SELECT = 16,
-  JP8_STORE_SELECT = 17
+  JP8_STORE_SELECT = 17,
+
+  BANK_SELECT = 18
 };
 
 UiState state = PARAMETER;
@@ -193,7 +195,8 @@ void setup() {
   cardStatus = SD.begin(BUILTIN_SDCARD);
   if (cardStatus) {
     Serial.println("SD card is connected");
-    ensureJP8BankInitialized();
+    ensureJP8BankInitialized(activeBank);
+    ensureJP8PatchBankInitialized();
     ensureJP8PerformanceBankInitialized();
   } else {
     Serial.println("SD card is not connected or unusable");
@@ -277,12 +280,106 @@ void setup() {
   updateupperSW(0);
   updatelowerSW(0);
   updateplayMode(0);
+  upperData[P_volume] = 80;
+  lowerData[P_volume] = 80;
   manualMode = true;
   mcp7.digitalWrite(MANUAL_LED, HIGH);
   showPatchPage("", "", "--", "Manual");
   bootInitInProgress = false;
   suppressParamAnnounce = false;
   startParameterDisplay();
+}
+
+// Banks helpers
+
+static inline void ensureJP8PatchBankInitialized() {
+  // assumes activeBank already set to target
+  for (uint8_t r = 1; r <= 8; r++) {
+    for (uint8_t c = 1; c <= 8; c++) {
+      const uint8_t rc = (uint8_t)(r * 10 + c);
+      if (!jp8_isValidRC(rc)) continue;
+
+      const String path = patchPathFromRC(rc);
+      if (SD.exists(path.c_str())) continue;
+
+      // Use a known init patch payload:
+      // Option A: if you have INITPATCHDATA string, use it.
+      // Option B: use getCurrentPatchData() ONLY if your current state is a valid init.
+      const String initData = defaultPatchDataString();
+      savePatch(String(rc).c_str(), initData);
+    }
+  }
+}
+
+static inline String defaultPatchDataString() {
+  // CSV format: first field = patch name, then NO_OF_PARAMS-1 numeric fields.
+  String s = "InitPatch";
+  for (int i = 1; i < NO_OF_PARAMS; i++) s += ",0";
+  return s;
+}
+
+// Call once at boot, and also on bank switch
+static inline void ensureJP8BankInitialized(uint8_t bank) {
+  if (bank >= BANK_COUNT) return;
+
+  ensureJP8BankFolders(bank);
+
+  // Temporarily set activeBank so your existing RC helpers write to the right place
+  const uint8_t prev = activeBank;
+  activeBank = bank;
+
+  // Initialize performances (uses your existing ensure function if you already updated it)
+  ensureJP8PerformanceBankInitialized();
+
+  // Initialize patches (you need an equivalent initializer that creates 11..88 if missing)
+  // If you already have it, call it here:
+  // ensureJP8PatchBankInitialized();
+
+  activeBank = prev;
+}
+
+// --- Bank select UI helpers ---
+static inline void enterBankSelect() {
+  bankPreview = activeBank;
+  state = BANK_SELECT;
+  showCurrentParameterPage("Bank Select", "B" + String(bankPreview));
+  startParameterDisplay();
+  updateScreen();
+}
+
+static inline void cancelBankSelect() {
+  state = PARAMETER;
+  refreshPatchDisplayFromState();
+  updateScreen();
+}
+
+static inline void commitBankSelect() {
+  activeBank = bankPreview;
+  ensureJP8BankInitialized(activeBank);
+
+  // recall something safe in the NEW bank
+  exitManualModeIfActive();
+  if (inPerformanceMode) {
+    recallPerformanceRC(11);
+  } else {
+    upperSW = true;  recallPatch(11);
+    upperSW = false; recallPatch(11);
+  }
+
+  state = PARAMETER;
+  refreshPatchDisplayFromState();
+  updateScreen();
+}
+
+static inline void bankSelectRotate(int dir) { // dir = +1 or -1
+  int next = (int)bankPreview + dir;
+  if (next < 0) next = BANK_COUNT - 1;
+  if (next >= BANK_COUNT) next = 0;
+  bankPreview = (uint8_t)next;
+
+  showCurrentParameterPage("Bank Select", "B" + String(bankPreview));
+  startParameterDisplay();
+  updateScreen();
 }
 
 //DAC control
@@ -1309,10 +1406,6 @@ inline void updateHoldLEDs() {
 
 // Patch creation in jupiter 8 style
 
-inline String perfPathFromRC(uint8_t rc) {
-  return String("/performances/perf") + String(rc);  // "/performances/perf11"
-}
-
 inline const char *patchNameOrInit(uint8_t rc) {
   String slotName = getPatchName(rc);
   if (slotName.length() == 0) slotName = INITPATCHNAME;
@@ -1427,9 +1520,8 @@ void ensureJP8BankInitialized() {
 }
 
 void ensureJP8PerformanceBankInitialized() {
-  if (!SD.exists("/performances")) {
-    SD.mkdir("/performances");
-  }
+  // BANKED ONLY: ensure bank folders exist
+  ensureJP8BankFolders(activeBank);
 
   Performance defaultPerf;
   defaultPerf.performanceNo = 11;  // overwritten per slot
@@ -1438,26 +1530,27 @@ void ensureJP8PerformanceBankInitialized() {
   defaultPerf.name = "InitPerf";
   defaultPerf.mode = WHOLE;
 
-  // NEW defaults (match your ranges)
-  defaultPerf.splitPoint = 12;  // 0..24
-  defaultPerf.splitTrans = 0;   // 0..4
-  defaultPerf.upperVol = 127;   // 0..127
-  defaultPerf.lowerVol = 127;   // 0..127
-  defaultPerf.upperBal = 0;     // -63..+63
-  defaultPerf.lowerBal = 0;     // -63..+63
+  // Defaults (raw engine values)
+  defaultPerf.splitPoint = 12;   // 0..24
+  defaultPerf.splitTrans = 0;    // 0..4
+
+  defaultPerf.upperVol = 127;    // 0..127
+  defaultPerf.lowerVol = 127;    // 0..127
+
+  defaultPerf.upperBal = 64;     // 0..127 (center)
+  defaultPerf.lowerBal = 64;     // 0..127 (center)
 
   defaultPerf.arpRangeSW = 0;
   defaultPerf.arpModeSW = 0;
   defaultPerf.arpRate = 0;
-  defaultPerf.arpClockSrc = ARPCLK_INTERNAL;
+  defaultPerf.arpClockSrc = (uint8_t)ARPCLK_INTERNAL; // or ARPCLK_INTERNAL if field is enum
 
   for (uint8_t r = 1; r <= 8; r++) {
     for (uint8_t c = 1; c <= 8; c++) {
       const uint8_t rc = (uint8_t)(r * 10 + c);
       if (!jp8_isValidRC(rc)) continue;
 
-      const String path = perfPathFromRC(rc);
-
+      const String path = perfPathFromRC(rc); // should be /banks/bXX/performances/perf##
       if (!SD.exists(path.c_str())) {
         Performance p = defaultPerf;
         p.performanceNo = rc;
@@ -2041,36 +2134,23 @@ void savePerformanceRC(uint8_t rc, const Performance &perfIn) {
   // v2: v2,upper,lower,name,mode,splitPoint,splitTrans,upperVol,lowerVol,upperBal,lowerBal,arpRangeSW,arpModeSW,arpRate,arpClockSrc
   file.print("v2,");
 
-  file.print((int)perf.upperPatchNo);
-  file.print(",");
-  file.print((int)perf.lowerPatchNo);
-  file.print(",");
-  file.print(perf.name);
-  file.print(",");
-  file.print((int)perf.mode);
-  file.print(",");
+  file.print((int)perf.upperPatchNo); file.print(",");
+  file.print((int)perf.lowerPatchNo); file.print(",");
+  file.print(perf.name);             file.print(",");
+  file.print((int)perf.mode);        file.print(",");
 
-  file.print((int)clampU8(perf.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT));
-  file.print(",");
-  file.print((int)clampU8(perf.splitTrans, 0, 4, PERF_DEFAULT_SPLIT_TRANS));
-  file.print(",");
+  file.print((int)clampU8(perf.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT)); file.print(",");
+  file.print((int)clampU8(perf.splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS)); file.print(","); // FIX 0..5
 
-  file.print((int)clampU8(perf.upperVol, 0, 127, PERF_DEFAULT_VOL));
-  file.print(",");
-  file.print((int)clampU8(perf.lowerVol, 0, 127, PERF_DEFAULT_VOL));
-  file.print(",");
+  file.print((int)clampU8(perf.upperVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
+  file.print((int)clampU8(perf.lowerVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
 
-  file.print((int)clampU8(perf.upperBal, 0, 127, 63));
-  file.print(",");
-  file.print((int)clampU8(perf.lowerBal, 0, 127, 63));
-  file.print(",");
+  file.print((int)clampU8(perf.upperBal, 0, 127, 64)); file.print(",");      // FIX default center 64
+  file.print((int)clampU8(perf.lowerBal, 0, 127, 64)); file.print(",");
 
-  file.print((int)clampU8(perf.arpRangeSW, 0, 127, 0));
-  file.print(",");
-  file.print((int)clampU8(perf.arpModeSW, 0, 127, 0));
-  file.print(",");
-  file.print((int)clampU8(perf.arpRate, 0, 127, 0));
-  file.print(",");
+  file.print((int)clampU8(perf.arpRangeSW, 0, 127, 0)); file.print(",");
+  file.print((int)clampU8(perf.arpModeSW,  0, 127, 0)); file.print(",");
+  file.print((int)clampU8(perf.arpRate,    0, 127, 0)); file.print(",");
   file.println((int)clampU8(perf.arpClockSrc, 0, 2, (uint8_t)ARPCLK_INTERNAL));
 
   file.close();
@@ -2087,19 +2167,16 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
   line.trim();
   if (!line.length()) return false;
 
-  out = Performance();  // defaults
+  out = Performance();     // defaults
   out.performanceNo = rc;
 
-  auto fieldOrEmpty = [&](int idx) -> String {
-    return csvGetField(line, idx);
-  };
+  auto fieldOrEmpty = [&](int idx) -> String { return csvGetField(line, idx); };
 
-  // ---- v2 (allow missing trailing fields) ----
   if (line.startsWith("v2,")) {
     const String upperS = fieldOrEmpty(1);
     const String lowerS = fieldOrEmpty(2);
-    const String nameS = fieldOrEmpty(3);
-    const String modeS = fieldOrEmpty(4);
+    const String nameS  = fieldOrEmpty(3);
+    const String modeS  = fieldOrEmpty(4);
 
     if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
 
@@ -2108,7 +2185,6 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
     out.name = nameS;
     out.mode = (PlayMode)modeS.toInt();
 
-    // Optional fields: only overwrite defaults if present
     const String spS = fieldOrEmpty(5);
     const String stS = fieldOrEmpty(6);
     const String uvS = fieldOrEmpty(7);
@@ -2121,27 +2197,27 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
     const String acS = fieldOrEmpty(14);
 
     if (spS.length()) out.splitPoint = clampU8(spS.toInt(), 0, 24, PERF_DEFAULT_SPLIT_POINT);
-    if (stS.length()) out.splitTrans = clampU8(stS.toInt(), 0, 4, PERF_DEFAULT_SPLIT_TRANS);
+    if (stS.length()) out.splitTrans = clampU8(stS.toInt(), 0, 4,  PERF_DEFAULT_SPLIT_TRANS); // FIX 0..4
 
     if (uvS.length()) out.upperVol = clampU8(uvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
     if (lvS.length()) out.lowerVol = clampU8(lvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
 
-    if (ubS.length()) out.upperBal = clampU8(csvGetField(line, 9).toInt(), 0, 127, 63);
-    if (lbS.length()) out.lowerBal = clampU8(csvGetField(line, 9).toInt(), 0, 127, 63);
+    if (ubS.length()) out.upperBal = clampU8(ubS.toInt(), 0, 127, 64);       // FIX use ubS
+    if (lbS.length()) out.lowerBal = clampU8(lbS.toInt(), 0, 127, 64);       // FIX use lbS (was field 9)
 
     if (arS.length()) out.arpRangeSW = clampU8(arS.toInt(), 0, 127, 0);
-    if (amS.length()) out.arpModeSW = clampU8(amS.toInt(), 0, 127, 0);
-    if (atS.length()) out.arpRate = clampU8(atS.toInt(), 0, 127, 0);
-    if (acS.length()) out.arpClockSrc = clampU8(csvGetField(line, 14).toInt(), 0, 2, (uint8_t)ARPCLK_INTERNAL);
+    if (amS.length()) out.arpModeSW  = clampU8(amS.toInt(), 0, 127, 0);
+    if (atS.length()) out.arpRate    = clampU8(atS.toInt(), 0, 127, 0);
+    if (acS.length()) out.arpClockSrc= clampU8(acS.toInt(), 0, 2, (uint8_t)ARPCLK_INTERNAL);  // FIX use acS
 
     return true;
   }
 
-  // ---- v1 legacy: upper,lower,name,mode ----
+  // v1: upper,lower,name,mode
   const String upperS = fieldOrEmpty(0);
   const String lowerS = fieldOrEmpty(1);
-  const String nameS = fieldOrEmpty(2);
-  const String modeS = fieldOrEmpty(3);
+  const String nameS  = fieldOrEmpty(2);
+  const String modeS  = fieldOrEmpty(3);
 
   if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
 
@@ -2150,7 +2226,6 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
   out.name = nameS;
   out.mode = (PlayMode)modeS.toInt();
 
-  // Extras remain defaults
   return true;
 }
 
@@ -5160,7 +5235,7 @@ void updatePatchname() {
   refreshPatchDisplayFromState();
 }
 
-void myControlChange(byte channel, byte control, int value) {
+void myControlChange(byte channel, byte control, byte value) {
 
   switch (control) {
 
@@ -6045,9 +6120,16 @@ void myAfterTouch(byte channel, byte value) {
 void recallPatch(uint8_t rc) {
   allNotesOff();
 
-  File patchFile = SD.open(String(rc).c_str());
+  if (!jp8_isValidRC(rc)) return;
+
+  // Ensure bank folders exist (safe; can be removed if you guarantee init elsewhere)
+  ensureJP8BankFolders(activeBank);
+
+  const String path = patchPathFromRC(rc);   // /banks/bXX/patches/11
+  File patchFile = SD.open(path.c_str(), FILE_READ);
   if (!patchFile) {
-    Serial.println("File not found");
+    Serial.print("Patch file not found: ");
+    Serial.println(path);
     return;
   }
 
@@ -6979,6 +7061,11 @@ void checkSwitches() {
 
     switch (state) {
       // Cancel save UI only; keep edited patch live (no recall/reload)
+
+      case BANK_SELECT:
+        cancelBankSelect();
+        return;
+
       case JP8_STORE_SELECT:
         renamedPatch = "";
         startedRenaming = false;
@@ -7113,6 +7200,18 @@ void checkSwitches() {
 
   if (recallButton.numClicks() == 1) {
     switch (state) {
+
+      case BANK_SELECT:
+        commitBankSelect(); 
+        return;
+
+      case PARAMETER:
+        if (jp8Mode) {
+          enterBankSelect();
+          return;
+        }
+        break;
+
       case JP8_STORE_SELECT:
         // After first SAVE, encoder press always enters patch naming
         jp8EnterStoreNaming(jp8StoreTargetRC);
@@ -7201,6 +7300,10 @@ void checkEncoder() {
         updateScreen();
         break;
 
+      case BANK_SELECT:
+        bankSelectRotate(+1); 
+        break;
+
       default:
         break;
     }
@@ -7231,6 +7334,10 @@ void checkEncoder() {
         settings::decrement_setting_value();
         showSettingsPage();
         updateScreen();
+        break;
+
+      case BANK_SELECT:
+        bankSelectRotate(-1);
         break;
 
       default:

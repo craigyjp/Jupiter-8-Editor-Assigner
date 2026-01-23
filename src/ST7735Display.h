@@ -483,6 +483,11 @@ void updateScreen() {
 
     case JP8_RECALL_SELECT:
       break;
+
+    case BANK_SELECT:
+     renderCurrentParameterPage();
+     break;
+
   }
 
   tft.updateScreen();

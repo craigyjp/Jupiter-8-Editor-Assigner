@@ -38,6 +38,36 @@ size_t readField(File *file, char *str, size_t size, const char *delim)
   return n;
 }
 
+static inline void ensureDir(const String &dir) {
+  if (!SD.exists(dir.c_str())) SD.mkdir(dir.c_str());
+}
+
+static inline String bankBaseDir(uint8_t bank) {
+  char buf[20];
+  snprintf(buf, sizeof(buf), "/banks/b%02u", (unsigned)bank);
+  return String(buf);
+}
+
+static inline void ensureJP8BankFolders(uint8_t bank) {
+  ensureDir("/banks");
+  const String base = bankBaseDir(bank);
+  ensureDir(base);
+  ensureDir(base + "/patches");
+  ensureDir(base + "/performances");
+}
+
+// PATCH files are named: "11".."88"
+static inline String patchPathFromRC(uint8_t rc) {
+  const String base = bankBaseDir(activeBank);
+  return base + "/patches/" + String(rc);
+}
+
+// PERF files are named: "perf11".."perf88"
+static inline String perfPathFromRC(uint8_t rc) {
+  const String base = bankBaseDir(activeBank);
+  return base + "/performances/perf" + String(rc);
+}
+
 void recallPatchData(File patchFile, String data[])
 {
   //Read patch data from file and set current patch parameters
@@ -73,55 +103,72 @@ int compare(const void *a, const void *b) {
   return ((PatchNoAndName*)a)->patchNo - ((PatchNoAndName*)b)->patchNo;
 }
 
-void loadPatches()
-{
-  File file = SD.open("/");
+void loadPatches() {
   patches.clear();
-  while (true)
-  {
-    String data[NO_OF_PARAMS]; //Array of data read in
-    File patchFile = file.openNextFile();
-    if (!patchFile)
-    {
-      break;
+
+  const String patchesDir = bankBaseDir(activeBank) + "/patches";
+  File dir = SD.open(patchesDir.c_str());
+  if (!dir || !dir.isDirectory()) {
+    Serial.print("Failed to open patches dir: ");
+    Serial.println(patchesDir);
+    return;
+  }
+
+  while (true) {
+    File patchFile = dir.openNextFile();
+    if (!patchFile) break;
+
+    if (patchFile.isDirectory()) {
+      patchFile.close();
+      continue;
     }
-    if (patchFile.isDirectory())
-    {
-      Serial.println("Ignoring Dir");
+
+    const char *fname = patchFile.name(); // "11".."88"
+    if (!fname || strlen(fname) != 2 ||
+        fname[0] < '1' || fname[0] > '8' ||
+        fname[1] < '1' || fname[1] > '8') {
+      patchFile.close();
+      continue;
     }
-    else
-    {
-      recallPatchData(patchFile, data);
-      patches.push(PatchNoAndName{atoi(patchFile.name()), data[0]});
-      Serial.println(String(patchFile.name()) + ":" + data[0]);
-    }
+
+    String data[NO_OF_PARAMS];
+    recallPatchData(patchFile, data);
+
+    const uint8_t rc = (uint8_t)((fname[0] - '0') * 10 + (fname[1] - '0'));
+    patches.push(PatchNoAndName{ (int)rc, data[0] });
+
     patchFile.close();
   }
-  //sortPatches();
+
+  dir.close();
 }
 
-void savePatch(const char *patchNo, String patchData)
-{
-  // Serial.print("savePatch Patch No:");
-  //  Serial.println(patchNo);
-  //Overwrite existing patch by deleting
-  if (SD.exists(patchNo))
-  {
-    SD.remove(patchNo);
+void savePatch(const char *patchNo, String patchData) {
+  if (!patchNo) return;
+
+  // Expect "11".."88"
+  if (strlen(patchNo) != 2 ||
+      patchNo[0] < '1' || patchNo[0] > '8' ||
+      patchNo[1] < '1' || patchNo[1] > '8') {
+    Serial.print("Invalid patchNo: ");
+    Serial.println(patchNo);
+    return;
   }
-  File patchFile = SD.open(patchNo, FILE_WRITE);
-  if (patchFile)
-  {
-    //    Serial.print("Writing Patch No:");
-    //    Serial.println(patchNo);
-    //Serial.println(patchData);
+
+  const uint8_t rc = (uint8_t)atoi(patchNo);
+  const String path = patchPathFromRC(rc);   // /banks/bXX/patches/11
+
+  ensureJP8BankFolders(activeBank);          // safety
+
+  if (SD.exists(path.c_str())) SD.remove(path.c_str());
+
+  File patchFile = SD.open(path.c_str(), FILE_WRITE);
+  if (patchFile) {
     patchFile.println(patchData);
     patchFile.close();
-  }
-  else
-  {
-    Serial.print("Error writing Patch file:");
-    Serial.println(patchNo);
+  } else {
+    Serial.print("Error writing Patch file: ");
+    Serial.println(path);
   }
 }
 
