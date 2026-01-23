@@ -20,6 +20,8 @@ The VCF Bend is not practical to implement so I've replaced that with aftertouch
 
 I created a perl script to convert the factory JP-08 patches to the same format as my editor and loaded all the original 64 jupiter 8 patches.
 
+16 banks of 64 patches/performances are now available by pressing the recall button and scrolling through the banks.
+
 # Things to do
 
 * possibly switch to sysex for 0-255 parameter changes for better resolution.
