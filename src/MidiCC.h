@@ -49,6 +49,7 @@
 #define   CCenv1Release   54
 #define   CCenv1InvertSW  55
 
+#define   CCsustain       64
 #define   CCglideSW       65
 
 #define   CCenv2Attack    73
@@ -57,6 +58,7 @@
 #define   CCenv2Release   72
 #define   CCenv2KeyFollowSW 57
 
+#define   CCassignMode    86
 #define   CCbendRange     87
 
 #define   CCdelayLevel    91

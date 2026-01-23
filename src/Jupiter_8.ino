@@ -210,7 +210,7 @@ void setup() {
   //USB HOST MIDI Class Compliant
   delay(400);  //Wait to turn on USB Host
   myusb.begin();
-  midi1.setHandleControlChange(editControlChange);
+  midi1.setHandleControlChange(myControlChange);
   midi1.setHandleNoteOff(myNoteOff);
   midi1.setHandleNoteOn(myNoteOn);
   midi1.setHandlePitchChange(DinHandlePitchBend);
@@ -218,7 +218,7 @@ void setup() {
   Serial.println("USB HOST MIDI Class Compliant Listening");
 
   //USB Client MIDI
-  usbMIDI.setHandleControlChange(editControlChange);
+  usbMIDI.setHandleControlChange(myControlChange);
   usbMIDI.setHandleProgramChange(myProgramChange);
   usbMIDI.setHandleAfterTouchChannel(myAfterTouch);
   usbMIDI.setHandlePitchChange(DinHandlePitchBend);
@@ -232,7 +232,7 @@ void setup() {
 
   //MIDI 5 Pin DIN
   MIDI.begin();
-  MIDI.setHandleControlChange(editControlChange);
+  MIDI.setHandleControlChange(myControlChange);
   MIDI.setHandleProgramChange(myProgramChange);
   MIDI.setHandleAfterTouchChannel(myAfterTouch);
   MIDI.setHandlePitchBend(DinHandlePitchBend);
@@ -365,8 +365,8 @@ void applyVolumeBalanceToDacs(PlayMode mode) {
     lower_code = apply_q15(base, lg);
   }
 
-  setVoltage(0, 0, upper_code);
-  setVoltage(1, 0, lower_code);
+  setVoltage(0, 0, lower_code);
+  setVoltage(1, 0, upper_code);
 
 }
 
@@ -2325,11 +2325,6 @@ void handleJp8PresetDigit(uint8_t digit) {  // 1..8 from PERFORMANCE digit butto
   updateScreen();
 }
 
-void editControlChange(byte channel, byte control, byte value) {
-  int newvalue = value;
-  myControlChange(channel, control, newvalue);
-}
-
 int mod(int a, int b) {
   int r = a % b;
   return r < 0 ? r + b : r;
@@ -3472,10 +3467,12 @@ void updatevcoLfoModDepth(boolean announce) {
   }
   if (upperSW) {
     midiCCOut(CCvcoLfoModDepth, upperData[P_vcoLfoModDepth]);
+    //upperData[CCvcoLfoModDepth] = upperData[P_vcoLfoModDepth];
   } else {
     midiCCOut(CCvcoLfoModDepth, lowerData[P_vcoLfoModDepth]);
+    //lowerData[CCvcoLfoModDepth] = lowerData[P_vcoLfoModDepth];
     if (wholemode) {
-      upperData[P_vcoLfoModDepth] = lowerData[P_vcoLfoModDepth];
+      upperData[P_vcoLfoModDepth] = upperData[P_vcoLfoModDepth];
     }
   }
 }
@@ -3522,10 +3519,11 @@ void updatevcoLfoMod(boolean announce) {
     showCurrentParameterPage("LFO VCO Mod", String(vcoLfoModstr));
     startParameterDisplay();
   }
-  midiCCOut(CCvcoLfoMod, upperData[P_vcoLfoMod]);
   if (upperSW) {
+    midiCCOut(CCvcoLfoMod, upperData[P_vcoLfoMod]);
     midiCCOutUpper(CCvcoLfoMod, upperData[P_vcoLfoMod]);
   } else {
+    midiCCOut(CCvcoLfoMod, lowerData[P_vcoLfoMod]);
     midiCCOutLower(CCvcoLfoMod, lowerData[P_vcoLfoMod]);
     if (wholemode) {
       midiCCOutUpper(CCvcoLfoMod, upperData[P_vcoLfoMod]);
@@ -3538,10 +3536,11 @@ void updatevcoEnvMod(boolean announce) {
     showCurrentParameterPage("ENV VCO Mod", String(vcoEnvModstr));
     startParameterDisplay();
   }
-  midiCCOut(CCvcoEnvMod, upperData[P_vcoEnvMod]);
   if (upperSW) {
+    midiCCOut(CCvcoEnvMod, upperData[P_vcoEnvMod]);
     midiCCOutUpper(CCvcoEnvMod, upperData[P_vcoEnvMod]);
   } else {
+    midiCCOut(CCvcoEnvMod, lowerData[P_vcoEnvMod]);
     midiCCOutLower(CCvcoEnvMod, lowerData[P_vcoEnvMod]);
     if (wholemode) {
       midiCCOutUpper(CCvcoEnvMod, upperData[P_vcoEnvMod]);
@@ -3581,8 +3580,10 @@ void updatelfoWaveform(boolean announce) {
     startParameterDisplay();
   }
   if (upperSW) {
+    midiCCOut(CClfoWaveform, upperData[P_lfoWaveform]);
     midiCCOutUpper(CClfoWaveform, upperData[P_lfoWaveform]);
   } else {
+    midiCCOut(CClfoWaveform, lowerData[P_lfoWaveform]);
     midiCCOutLower(CClfoWaveform, lowerData[P_lfoWaveform]);
     if (wholemode) {
       midiCCOutUpper(CClfoWaveform, upperData[P_lfoWaveform]);
@@ -4110,8 +4111,8 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(SOLO_LED, LOW);
       mcp3.digitalWrite(UNISON_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, HIGH);
-      midiCCOutUpper(CCkeyboardMode, 0);
-      midiCCOut(CCkeyboardMode, 0);
+      midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      midiCCOut(CCkeyboardMode, upperData[P_keyboardModeSW]);
     } else if (upperData[P_keyboardModeSW] == 1) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Poly 2");
@@ -4121,8 +4122,8 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(UNISON_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, LOW);
       mcp3.digitalWrite(POLY2_LED, HIGH);
-      midiCCOutUpper(CCkeyboardMode, 1);
-      midiCCOut(CCkeyboardMode, 1);
+      midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      midiCCOut(CCkeyboardMode, upperData[P_keyboardModeSW]);
     } else if (upperData[P_keyboardModeSW] == 2) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Mono");
@@ -4132,8 +4133,8 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(POLY1_LED, LOW);
       mcp3.digitalWrite(POLY2_LED, LOW);
       mcp3.digitalWrite(SOLO_LED, HIGH);
-      midiCCOutUpper(CCkeyboardMode, 2);
-      midiCCOut(CCkeyboardMode, 2);
+      midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      midiCCOut(CCkeyboardMode, upperData[P_keyboardModeSW]);
     } else if (upperData[P_keyboardModeSW] == 3) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Unison");
@@ -4143,8 +4144,8 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(SOLO_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, LOW);
       mcp3.digitalWrite(UNISON_LED, HIGH);
-      midiCCOutUpper(CCkeyboardMode, 3);
-      midiCCOut(CCkeyboardMode, 3);
+      midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      midiCCOut(CCkeyboardMode, upperData[P_keyboardModeSW]);
     }
   } else {
     if (dualmode) {
@@ -4159,8 +4160,11 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(SOLO_LED, LOW);
       mcp3.digitalWrite(UNISON_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, HIGH);
-      midiCCOutLower(CCkeyboardMode, 0);
-      midiCCOut(CCkeyboardMode, 0);
+      midiCCOutLower(CCassignMode, lowerData[P_keyboardModeSW]);
+      midiCCOut(CCkeyboardMode, lowerData[P_keyboardModeSW]);
+        if (wholemode) {
+          midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+        }
     } else if (lowerData[P_keyboardModeSW] == 1) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Poly 2");
@@ -4170,8 +4174,11 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(UNISON_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, LOW);
       mcp3.digitalWrite(POLY2_LED, HIGH);
-      midiCCOutLower(CCkeyboardMode, 1);
-      midiCCOut(CCkeyboardMode, 1);
+      midiCCOutLower(CCassignMode, lowerData[P_keyboardModeSW]);
+      midiCCOut(CCkeyboardMode, lowerData[P_keyboardModeSW]);
+        if (wholemode) {
+          midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+        }
     } else if (lowerData[P_keyboardModeSW] == 2) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Mono");
@@ -4181,9 +4188,11 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(POLY1_LED, LOW);
       mcp3.digitalWrite(POLY2_LED, LOW);
       mcp3.digitalWrite(SOLO_LED, HIGH);
-      midiCCOutUpper(CCkeyboardMode, 2);
-      midiCCOutLower(CCkeyboardMode, 2);
-      midiCCOut(CCkeyboardMode, 2);
+      midiCCOutLower(CCassignMode, lowerData[P_keyboardModeSW]);
+      if (wholemode) {
+          midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      }
+      midiCCOut(CCkeyboardMode, lowerData[P_keyboardModeSW]);
     } else if (lowerData[P_keyboardModeSW] == 3) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Unison");
@@ -4193,8 +4202,11 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(SOLO_LED, LOW);
       mcp3.digitalWrite(POLY1_LED, LOW);
       mcp3.digitalWrite(UNISON_LED, HIGH);
-      midiCCOutLower(CCkeyboardMode, 3);
-      midiCCOut(CCkeyboardMode, 3);
+      midiCCOutLower(CCassignMode, lowerData[P_keyboardModeSW]);
+      if (wholemode) {
+        midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      }
+      midiCCOut(CCkeyboardMode, lowerData[P_keyboardModeSW]);
     }
   }
 }
@@ -5152,6 +5164,10 @@ void myControlChange(byte channel, byte control, int value) {
 
   switch (control) {
 
+    case CCsustain:
+
+    break;
+   
     case CCmodwheel:
       {
         uint8_t mw = value;  // 0..127
@@ -6130,6 +6146,11 @@ void upperParamsToDisplay() {
   updatelfoWaveform(0);
   updatevcoLfoModDepth(0);
   updatevcfLfoModDepth(0);
+  updatevcaLevel(0);
+  updateATDepth(0);
+  updatedelayLevel(0);
+  updatedelayTime(0);
+  updatedelayFeedback(0);
   updatearpRate(0);
 }
 
@@ -6142,6 +6163,7 @@ void lowerParamsToDisplay() {
   updateresonance(0);
   updatevcfEnvDepth(0);
   updatevcfKeyFollow(0);
+  updatevcfLfoDepth(0);
   updateenv1Attack(0);
   updateenv1Decay(0);
   updateenv1Sustain(0);
@@ -6166,6 +6188,11 @@ void lowerParamsToDisplay() {
   updatelfoWaveform(0);
   updatevcoLfoModDepth(0);
   updatevcfLfoModDepth(0);
+  updatevcaLevel(0);
+  updateATDepth(0);
+  updatedelayLevel(0);
+  updatedelayTime(0);
+  updatedelayFeedback(0);
   updatearpRate(0);
 }
 
@@ -6224,14 +6251,17 @@ String getCurrentPatchData() {
 }
 
 void midiCCOut(byte cc, byte value) {
+  
   MIDI.sendControlChange(cc, value, midiChannel);  //MIDI DIN main out
 }
 
 void midiCCOutUpper(byte cc, byte value) {
+  delay(1);
   MIDI7.sendControlChange(cc, value, 1);  //MIDI DIN to synth board upper
 }
 
 void midiCCOutLower(byte cc, byte value) {
+  delay(1);
   MIDI6.sendControlChange(cc, value, 1);  //MIDI DIN to synth board lower
 }
 
@@ -7433,8 +7463,6 @@ void loop() {
   checkEncoder();
   midi1.read(midiChannel);  //USB HOST MIDI Class Compliant
   MIDI.read(midiChannel);
-  MIDI6.read(midiChannel);
-  MIDI7.read();
   usbMIDI.read(midiChannel);
   jp8UpdateFirstDigitLed();
   serviceExternalClockLed();
