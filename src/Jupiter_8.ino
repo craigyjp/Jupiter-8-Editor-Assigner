@@ -333,7 +333,7 @@ static inline void ensureJP8BankInitialized(uint8_t bank) {
 
   // Initialize patches (you need an equivalent initializer that creates 11..88 if missing)
   // If you already have it, call it here:
-  // ensureJP8PatchBankInitialized();
+  ensureJP8PatchBankInitialized();
 
   activeBank = prev;
 }
@@ -344,7 +344,6 @@ static inline void enterBankSelect() {
   state = BANK_SELECT;
   showCurrentParameterPage("Bank Select", "B" + String(bankPreview));
   startParameterDisplay();
-  updateScreen();
 }
 
 static inline void cancelBankSelect() {
@@ -357,17 +356,12 @@ static inline void commitBankSelect() {
   activeBank = bankPreview;
   ensureJP8BankInitialized(activeBank);
 
-  // recall something safe in the NEW bank
-  exitManualModeIfActive();
-  if (inPerformanceMode) {
-    recallPerformanceRC(11);
-  } else {
-    upperSW = true;  recallPatch(11);
-    upperSW = false; recallPatch(11);
-  }
+  // Keep current sound (DO NOT recallPatch / recallPerformanceRC here)
+  // Just refresh name tables so getPatchName() reflects the new bank
+  loadPatches();
 
   state = PARAMETER;
-  refreshPatchDisplayFromState();
+  refreshPatchDisplayFromState();  // redraws current display vars
   updateScreen();
 }
 
@@ -379,7 +373,6 @@ static inline void bankSelectRotate(int dir) { // dir = +1 or -1
 
   showCurrentParameterPage("Bank Select", "B" + String(bankPreview));
   startParameterDisplay();
-  updateScreen();
 }
 
 //DAC control
@@ -3225,18 +3218,8 @@ int getVoiceNo(int note) {
 }
 
 void DinHandlePitchBend(byte channel, int pitch) {
-  if (wholemode) {
-    MIDI6.sendPitchBend(pitch, 1);
-    MIDI7.sendPitchBend(pitch, 1);
-  }
-  if (dualmode) {
-    MIDI6.sendPitchBend(pitch, 1);
-    MIDI7.sendPitchBend(pitch, 1);
-  }
-  if (splitmode) {
-    MIDI6.sendPitchBend(pitch, 1);
-    MIDI7.sendPitchBend(pitch, 1);
-  }
+  MIDI6.sendPitchBend(pitch, 1);
+  MIDI7.sendPitchBend(pitch, 1);
 }
 
 void allNotesOff() {
@@ -6921,7 +6904,6 @@ void checkSwitches() {
         // UI message (use whatever you prefer)
         showCurrentParameterPage("Save Panel to Perf", "Enter ## then SAVE");
         startParameterDisplay();
-        updateScreen();
       }
     }
   } else {
@@ -6957,7 +6939,6 @@ void checkSwitches() {
         // Armed but no target yet: do nothing (or prompt again)
         showCurrentParameterPage("Save Panel to Perf", "Enter ## then SAVE");
         startParameterDisplay();
-        updateScreen();
       }
       return;
     }
