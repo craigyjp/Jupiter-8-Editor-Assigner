@@ -99,7 +99,7 @@ void renderPerformancePage() {
   tft.setTextSize(3);
   tft.println(currentPerfNum);
 
-  tft.setCursor(100, 75);
+  tft.setCursor(90, 75);
   tft.setFont(&FreeSans9pt7b);
   tft.setTextSize(2);
   tft.setTextColor(ST7735_WHITE);
@@ -110,7 +110,7 @@ void renderPerformancePage() {
   tft.setTextColor(ST7735_YELLOW);
   tft.println("Upp:");
 
-  tft.setCursor(100, 160);
+  tft.setCursor(90, 160);
   tft.setTextColor(ST7735_WHITE);
   tft.println(String(currentUpperPatchNo) + " " + currentUpperPatchName);
 
@@ -118,7 +118,7 @@ void renderPerformancePage() {
   tft.setTextColor(ST7735_YELLOW);
   tft.println("Low:");
 
-  tft.setCursor(100, 200);
+  tft.setCursor(90, 200);
   tft.setTextColor(ST7735_WHITE);
   tft.println(String(currentLowerPatchNo) + " " + currentLowerPatchName);
 }
@@ -171,7 +171,7 @@ void renderCurrentPatchPage() {
     tft.setTextColor(ST7735_YELLOW);
     tft.println(currentPgmNumU);
 
-    tft.setCursor(100, 79);
+    tft.setCursor(90, 79);
     tft.setFont(&FreeSans9pt7b);
     tft.setTextSize(2);
     tft.setTextColor(ST7735_WHITE);
@@ -185,7 +185,7 @@ void renderCurrentPatchPage() {
   tft.setTextColor(ST7735_YELLOW);
   tft.println(currentPgmNumL);
 
-  tft.setCursor(100, 175);
+  tft.setCursor(90, 175);
   tft.setFont(&FreeSans9pt7b);
   tft.setTextSize(2);
   tft.setTextColor(ST7735_WHITE);
@@ -240,7 +240,7 @@ void renderCurrentParameterPage() {
     tft.setTextColor(ST7735_YELLOW);
     tft.println(currentPgmNumU);
 
-    tft.setCursor(100, 79);
+    tft.setCursor(90, 79);
     tft.setFont(&FreeSans9pt7b);
     tft.setTextSize(2);
     tft.setTextColor(ST7735_WHITE);
@@ -254,7 +254,7 @@ void renderCurrentParameterPage() {
   tft.setTextColor(ST7735_YELLOW);
   tft.println(currentPgmNumL);
 
-  tft.setCursor(100, 175);
+  tft.setCursor(90, 175);
   tft.setFont(&FreeSans9pt7b);
   tft.setTextSize(2);
   tft.setTextColor(ST7735_WHITE);

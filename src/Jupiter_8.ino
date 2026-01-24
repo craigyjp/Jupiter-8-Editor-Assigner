@@ -293,7 +293,10 @@ void setup() {
 // Banks helpers
 
 static inline void ensureJP8PatchBankInitialized() {
-  // assumes activeBank already set to target
+  ensureJP8BankFolders(activeBank);
+
+  const String initData = defaultPatchDataString(); // build once
+
   for (uint8_t r = 1; r <= 8; r++) {
     for (uint8_t c = 1; c <= 8; c++) {
       const uint8_t rc = (uint8_t)(r * 10 + c);
@@ -302,10 +305,6 @@ static inline void ensureJP8PatchBankInitialized() {
       const String path = patchPathFromRC(rc);
       if (SD.exists(path.c_str())) continue;
 
-      // Use a known init patch payload:
-      // Option A: if you have INITPATCHDATA string, use it.
-      // Option B: use getCurrentPatchData() ONLY if your current state is a valid init.
-      const String initData = defaultPatchDataString();
       savePatch(String(rc).c_str(), initData);
     }
   }
