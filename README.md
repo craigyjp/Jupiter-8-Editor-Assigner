@@ -22,6 +22,8 @@ I created a perl script to convert the factory JP-08 patches to the same format 
 
 16 banks of 64 patches/performances are now available by pressing the recall button and scrolling through the banks.
 
+Program change 0-63 recalls patches 11-88, Program changes 64-127 recalls performances 11-88.
+
 # Things to do
 
 * possibly switch to sysex for 0-255 parameter changes for better resolution.
