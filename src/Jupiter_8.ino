@@ -6032,39 +6032,68 @@ void myControlChange(byte channel, byte control, byte value) {
   }
 }
 
-void myProgramChange(byte channel, byte program) {
-  if (inPerformanceMode) {
-    if (program < performances.size()) {
-      performanceIndex = program;
-      currentPerformance = performances[performanceIndex];
-
-      // Update playmode and patch indices
-      playMode = currentPerformance.mode;
-      wholemode = (playMode == WHOLE);
-      updateplayMode(0);
-
-      // Set patch indices
-      for (int i = 0; i < patches.size(); i++) {
-        if (patches[i].patchNo == currentPerformance.upperPatchNo) upperPatchIndex = i;
-        if (patches[i].patchNo == currentPerformance.lowerPatchNo) lowerPatchIndex = i;
-      }
-
-      // Recall both patches
-      upperSW = true;
-      recallPatch(currentPerformance.upperPatchNo);
-      upperSW = false;
-      recallPatch(currentPerformance.lowerPatchNo);
-
-      refreshPatchDisplayFromState();
-    }
-  } else {
-    // Normal patch recall
-    state = PATCH;
-    patchNo = program + 1;
-    recallPatch(patchNo);
-    state = PARAMETER;
-  }
+static inline uint8_t rcFromIndex0to63(uint8_t idx) {
+  const uint8_t row = (uint8_t)(idx / 8) + 1;
+  const uint8_t col = (uint8_t)(idx % 8) + 1;
+  return (uint8_t)(row * 10 + col);
 }
+
+
+static inline void enterPatchModeFromPerformanceFallback() {
+
+  playMode = WHOLE;
+  wholemode = true;
+  updateplayMode(0);
+
+  // If you have explicit "arp off" or patch arp restore, do it here.
+  // Example placeholders (use your real vars):
+  // arpEnabled = false;
+  // arpClockSrc = ARPCLK_INTERNAL;
+  // applyArpSettingsFromPatch();
+}
+
+void myProgramChange(byte channel, byte program) {
+  (void)channel;
+
+  if (program <= 63) {
+    const uint8_t rc = rcFromIndex0to63((uint8_t)program);
+
+    // If we were in performance mode, fully exit it (not just the flag)
+    if (inPerformanceMode) {
+      inPerformanceMode = false;
+      jp8PresetMode = false;
+
+      enterPatchModeFromPerformanceFallback();
+    } else {
+      inPerformanceMode = false;
+      jp8PresetMode = false;
+    }
+
+    exitManualModeIfActive();
+
+    state = PATCH;
+    upperSW = false;     // lower like your original
+    recallPatch(rc);
+    state = PARAMETER;
+
+    refreshPatchDisplayFromState();
+    updateScreen();
+    return;
+  }
+
+  const uint8_t rc = rcFromIndex0to63((uint8_t)(program - 64));
+
+  // Enter performance mode and recall
+  inPerformanceMode = true;
+  jp8PresetMode = true;
+
+  exitManualModeIfActive();
+  recallPerformanceRC(rc);
+
+  refreshPatchDisplayFromState();
+  updateScreen();
+}
+
 
 void myAfterTouch(byte channel, byte value) {
 
