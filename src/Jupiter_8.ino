@@ -1250,25 +1250,34 @@ void updateArpMode(boolean announce) {
 
 // Hold functions
 
+inline bool pedalAffectsLower() {
+  return true;
+}
+
+inline bool pedalAffectsUpper() {
+  return (playMode != 2);
+}
+
 inline bool holdEffectiveLower() {
-  if (playMode == 2) return holdManualLower;  // SPLIT
-  return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+  if (playMode == 2) return (holdManualLower || holdPedal);  // SPLIT
+  return (holdManualLower || holdManualUpper || holdPedal);  // WHOLE/DUAL
 }
 
 inline bool holdEffectiveUpper() {
-  if (playMode == 2) return holdManualUpper;  // SPLIT
-  return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+  if (playMode == 2) return holdManualUpper;                 // SPLIT (no pedal)
+  return (holdManualLower || holdManualUpper || holdPedal);  // WHOLE/DUAL
 }
 
 void reconcileHoldReleases() {
 
+  // PEDAL: sustain acts as global hold in WHOLE/DUAL, and LOWER-only in SPLIT
   auto holdEffectiveLower = [&]() -> bool {
-    if (playMode == 2) return holdManualLower;  // SPLIT
-    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+    if (playMode == 2) return (holdManualLower || holdPedal);  // SPLIT lower + pedal
+    return (holdManualLower || holdManualUpper || holdPedal);  // WHOLE/DUAL global
   };
   auto holdEffectiveUpper = [&]() -> bool {
-    if (playMode == 2) return holdManualUpper;  // SPLIT
-    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+    if (playMode == 2) return (holdManualUpper);               // SPLIT upper (no pedal)
+    return (holdManualLower || holdManualUpper || holdPedal);  // WHOLE/DUAL global
   };
 
   // -------------------------
@@ -1276,8 +1285,8 @@ void reconcileHoldReleases() {
   // -------------------------
   if (playMode != 2) {
 
-    // Only reconcile when hold is effectively OFF
-    if (!(holdManualLower || holdManualUpper)) {
+    // Only reconcile when hold is effectively OFF (manual + pedal)
+    if (!(holdManualLower || holdManualUpper || holdPedal)) {
 
       for (int n = 0; n < 128; n++) {
 
@@ -1318,13 +1327,17 @@ void reconcileHoldReleases() {
   // SPLIT: Lower/Upper independent
   // -------------------------
 
-  // LOWER
+  // LOWER (manual lower OR pedal)
   if (!holdEffectiveLower()) {
     for (int n = 0; n < 128; n++) {
       if (holdLatchedLower[n] && !keyDownLower[n]) {
 
-        int v = voiceAssignmentLower[n];
-        if (v >= 0 && v <= 3) releaseVoice((byte)n, v);
+        // Safer than voiceAssignmentLower[n] because voice stealing / mono/unison can change it.
+        for (int v = 0; v <= 3; v++) {
+          if (voices[v].noteOn && voices[v].note == n) {
+            releaseVoice((byte)n, v);
+          }
+        }
 
         holdLatchedLower[n] = false;
 
@@ -1336,13 +1349,16 @@ void reconcileHoldReleases() {
     }
   }
 
-  // UPPER
+  // UPPER (manual upper only; pedal does not affect upper in split)
   if (!holdEffectiveUpper()) {
     for (int n = 0; n < 128; n++) {
       if (holdLatchedUpper[n] && !keyDownUpper[n]) {
 
-        int v = voiceAssignmentUpper[n];
-        if (v >= 4 && v <= 7) releaseVoice((byte)n, v);
+        for (int v = 4; v <= 7; v++) {
+          if (voices[v].noteOn && voices[v].note == n) {
+            releaseVoice((byte)n, v);
+          }
+        }
 
         holdLatchedUpper[n] = false;
 
@@ -1430,11 +1446,12 @@ inline void updateHoldLEDs() {
   bool upperLedOn = false;
 
   if (playMode == 2) {  // SPLIT
-    lowerLedOn = holdManualLower;
-    upperLedOn = holdManualUpper;
+    // Pedal affects LOWER only in split
+    lowerLedOn = (holdManualLower || holdPedal);
+    upperLedOn = (holdManualUpper);
   } else {
-    // WHOLE or DUAL: global hold
-    bool globalHold = holdManualLower || holdManualUpper;
+    // WHOLE or DUAL: global hold includes pedal
+    bool globalHold = (holdManualLower || holdManualUpper || holdPedal);
     lowerLedOn = globalHold;
     upperLedOn = globalHold;
   }
@@ -1442,6 +1459,7 @@ inline void updateHoldLEDs() {
   mcp4.digitalWrite(LOWER_LED, lowerLedOn ? HIGH : LOW);
   mcp4.digitalWrite(UPPER_LED, upperLedOn ? HIGH : LOW);
 }
+
 
 // Patch creation in jupiter 8 style
 
@@ -2795,12 +2813,12 @@ void myNoteOn(byte channel, byte note, byte velocity) {
 void myNoteOff(byte channel, byte note, byte velocity) {
 
   auto holdEffectiveLower = [&]() -> bool {
-    if (playMode == 2) return holdManualLower;  // SPLIT
-    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+    if (playMode == 2) return (holdManualLower || holdPedal);  // SPLIT: pedal affects LOWER
+    return (holdManualLower || holdManualUpper || holdPedal);  // WHOLE/DUAL global
   };
   auto holdEffectiveUpper = [&]() -> bool {
-    if (playMode == 2) return holdManualUpper;  // SPLIT
-    return holdManualLower || holdManualUpper;  // WHOLE/DUAL global
+    if (playMode == 2) return (holdManualUpper);               // SPLIT: pedal does NOT affect UPPER
+    return (holdManualLower || holdManualUpper || holdPedal);  // WHOLE/DUAL global
   };
 
   // "present" for arp removal rules = physically down OR held-by-hold
@@ -5317,12 +5335,36 @@ static inline String formatGlideTime(float sec) {
   return String(sec, 1) + " s";
 }
 
+void handleSustainCC(uint8_t value) {
+  bool down = (value >= 64);
+
+  if (down == holdPedal) return;  // no change
+  holdPedal = down;
+
+  if (!down) {
+    // JP-8 DP-2 behavior: releasing the pedal switches OFF any manual hold
+    // that pedal was controlling.
+    if (playMode == 2) {
+      // Split: pedal controls LOWER only
+      holdManualLower = false;
+    } else {
+      // Whole/Dual: pedal controls global hold -> clear both manual toggles
+      holdManualLower = false;
+      holdManualUpper = false;
+    }
+
+    reconcileHoldReleases();
+  }
+
+  updateHoldLEDs();  // keep LEDs in sync (manual + pedal)
+}
+
 void myControlChange(byte channel, byte control, byte value) {
 
   switch (control) {
 
     case CCsustain:
-
+      handleSustainCC(value);
       break;
 
     case CCmodwheel:

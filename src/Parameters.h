@@ -21,6 +21,8 @@ bool holdPedal = false;     // DP-2 pressed
 bool holdLatchedLower[128] = {0}; // notes sustaining because Hold caught their note-off
 bool holdLatchedUpper[128] = {0};
 
+bool sustainPedalDown = false;     // CCsustain >= 64
+
 // JP8 Arpeggiator
 // -------------------- ARP CONFIG --------------------
 
