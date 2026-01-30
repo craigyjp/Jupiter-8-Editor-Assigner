@@ -8,7 +8,7 @@ These modules are 4 note polyphonic and can be used as half of a sound card for 
 
 The pair together create an 8 note polyphonic synth comparable to a Jupiter 8.
 
-The editor send MIDI CC updates to each module when a patch is recalled or a parameter is edited.
+The editor send Sysex and MIDI CC updates to each module when a patch is recalled or a parameter is edited.
 
 It also includes a key assigner that takes care of whole, dual and split modes and solo, unision, poly1 and poly2 modes.
 
@@ -26,7 +26,6 @@ Program change 0-63 recalls patches 11-88, Program changes 64-127 recalls perfor
 
 # Things to do
 
-* possibly switch to sysex for 0-255 parameter changes for better resolution.
 * General bug fixes/features as I find them.
 * Fix the sustain pedal input.
 
