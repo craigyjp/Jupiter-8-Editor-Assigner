@@ -1445,6 +1445,16 @@ inline void updateHoldLEDs() {
 
 // Patch creation in jupiter 8 style
 
+static inline void mirrorLowerToUpperDisplay() {
+  currentPgmNumU = currentPgmNumL;
+  currentPatchNameU = currentPatchNameL;
+
+  patchNameU = patchNameL;
+
+  upperSlotRC = lowerSlotRC;
+  lastPatchRC_U = lastPatchRC_L;
+}
+
 inline const char *patchNameOrInit(uint8_t rc) {
   String slotName = getPatchName(rc);
   if (slotName.length() == 0) slotName = INITPATCHNAME;
@@ -4060,6 +4070,20 @@ void updatedual_button(boolean announce) {
     wholemode = false;
     dualmode = true;
     splitmode = false;
+    lowerParamsToDisplay();
+    setAllButtons();
+    if (dualmode) {
+      if (!upperPatchSelected) {
+        for (int i = 1; i <= 74; i++) upperData[i] = lowerData[i];
+        mirrorLowerToUpperDisplay();
+      }
+
+      oldfilterCutoffU = upperData[P_filterCutoff];
+      upperParamsToDisplay();
+      setAllButtons();
+    }
+    refreshPatchDisplayFromState();
+    updateScreen();
   }
 }
 
@@ -4077,7 +4101,23 @@ void updatewhole_button(boolean announce) {
     splitmode = false;
     upperSW = false;
     lowerSW = true;
+    upperPatchSelected = false;
     updatelowerSW(0);
+    //lowerParamsToDisplay();
+    //setAllButtons();
+    if (wholemode) {
+
+      // Update previous values and pick-up flags
+      for (int i = 1; i <= 74; i++) {
+        upperData[i] = lowerData[i];  // Store previous value
+      }
+
+      oldfilterCutoffU = upperData[P_filterCutoff];
+      upperParamsToDisplay();
+      setAllButtons();
+    }
+    refreshPatchDisplayFromState();
+    updateScreen();
   }
 }
 
@@ -4093,6 +4133,20 @@ void updatesplit_button(boolean announce) {
     wholemode = false;
     dualmode = false;
     splitmode = true;
+    lowerParamsToDisplay();
+    setAllButtons();
+    if (splitmode) {
+      if (!upperPatchSelected) {
+        for (int i = 1; i <= 74; i++) upperData[i] = lowerData[i];
+        mirrorLowerToUpperDisplay();
+      }
+
+      oldfilterCutoffU = upperData[P_filterCutoff];
+      upperParamsToDisplay();
+      setAllButtons();
+    }
+    refreshPatchDisplayFromState();
+    updateScreen();
   }
 }
 
@@ -4125,7 +4179,7 @@ void updatelowerSW(boolean announce) {
 void updatekeyboardMode(boolean announce) {
   if (upperSW) {
     if (dualmode) {
-      lowerData[P_keyboardModeSW] = upperData[P_keyboardModeSW];
+      upperData[P_keyboardModeSW] = lowerData[P_keyboardModeSW];
     }
     if (upperData[P_keyboardModeSW] == 0) {
       if (announce && !suppressParamAnnounce) {
@@ -5239,11 +5293,10 @@ static inline String formatEnvTime(float sec) {
   }
 }
 
-static inline float glideSecFromU8(uint8_t v)
-{
+static inline float glideSecFromU8(uint8_t v) {
   if (v == 0) return 0.0f;
 
-  const float tMin = 0.001f;   // 1 ms
+  const float tMin = 0.001f;  // 1 ms
   const float tMax = 8.0f;    // adjust if you want
   const float ratio = tMax / tMin;
 
@@ -5251,16 +5304,15 @@ static inline float glideSecFromU8(uint8_t v)
   float x = (float)v / 255.0f;
 
   // slope warp: <1.0 makes times larger earlier
-  const float gamma = 0.46f;   // start here; tweak 0.40..0.70 by ear
+  const float gamma = 0.46f;  // start here; tweak 0.40..0.70 by ear
   float shaped = powf(x, gamma);
 
   return tMin * powf(ratio, shaped);
 }
 
-static inline String formatGlideTime(float sec)
-{
+static inline String formatGlideTime(float sec) {
   if (sec <= 0.0f) return "Off";
-  if (sec < 1.0f)  return String((int)lroundf(sec * 1000.0f)) + " ms";
+  if (sec < 1.0f) return String((int)lroundf(sec * 1000.0f)) + " ms";
   if (sec < 10.0f) return String(sec, 2) + " s";
   return String(sec, 1) + " s";
 }
@@ -6214,6 +6266,10 @@ void recallPatch(uint8_t rc) {
   allNotesOff();
 
   if (!jp8_isValidRC(rc)) return;
+
+  if (!wholemode && upperSW) {
+    upperPatchSelected = true;
+  }
 
   // Ensure bank folders exist (safe; can be removed if you guarantee init elsewhere)
   ensureJP8BankFolders(activeBank);

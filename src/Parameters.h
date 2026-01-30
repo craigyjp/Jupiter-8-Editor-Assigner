@@ -189,6 +189,8 @@ static constexpr uint8_t PERF_DEFAULT_VOL = 255;        // 0..255
 bool showMuxRead = true;
 bool manualMode = false;
 
+static bool upperPatchSelected = false;
+
 String patchNameU = INITPATCHNAME;
 String patchNameL = INITPATCHNAME;
 String patchName = INITPATCHNAME;
