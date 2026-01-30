@@ -1951,11 +1951,11 @@ void mainButtonChanged(Button *btn, bool released) {
 
     case PORTAMENTO_BUTTON:
       if (!released) {
-        glideSW = glideSW + 1;
-        if (glideSW > 2) {
-          glideSW = 0;
+        lowerData[P_glideSW] = lowerData[P_glideSW] + 1;
+        if (lowerData[P_glideSW] > 2) {
+          lowerData[P_glideSW] = 0;
         }
-        myControlChange(midiChannel, CCglideSW, glideSW);
+        myControlChange(midiChannel, CCglideSW, lowerData[P_glideSW]);
       }
       break;
 
@@ -3316,7 +3316,7 @@ void updatecrossMod(boolean announce) {
 
 void updateglideTime(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    showCurrentParameterPage("Glide Time", String(glideTimestr * 10) + " Seconds");
+    showCurrentParameterPage("Portamento", glideTimestr);
     startParameterDisplay();
   }
 
@@ -4239,7 +4239,7 @@ void updatekeyboardMode(boolean announce) {
 void updateglideSW(boolean announce) {
 
   if (announce && !suppressParamAnnounce) {
-    switch (glideSW) {
+    switch (lowerData[P_glideSW]) {
       case 0:
         showCurrentParameterPage("Glide", "Off");
         break;
@@ -4259,7 +4259,7 @@ void updateglideSW(boolean announce) {
     }
     startParameterDisplay();
   }
-  switch (glideSW) {
+  switch (lowerData[P_glideSW]) {
     case 0:
       midiCCOutUpper(CCglideSW, 0);
       midiCCOutLower(CCglideSW, 0);
@@ -4271,7 +4271,7 @@ void updateglideSW(boolean announce) {
       if (!wholemode) {
         midiCCOutUpper(CCglideSW, 127);
         midiCCOutLower(CCglideSW, 0);
-        midiCCOutUpper(CCglideTime, upperData[P_glideTime]);
+        jp08SendUpper(GLIDE_TIME, upperData[P_glideTime]);
         mcp1.digitalWrite(GLIDE_LED_GRN, HIGH);
         mcp1.digitalWrite(GLIDE_LED_RED, LOW);
       }
@@ -4280,8 +4280,8 @@ void updateglideSW(boolean announce) {
     case 2:
       midiCCOutUpper(CCglideSW, 127);
       midiCCOutLower(CCglideSW, 127);
-      midiCCOutUpper(CCglideTime, upperData[P_glideTime]);
-      midiCCOutLower(CCglideTime, lowerData[P_glideTime]);
+      jp08SendUpper(GLIDE_TIME, upperData[P_glideTime]);
+      jp08SendLower(GLIDE_TIME, lowerData[P_glideTime]);
       mcp1.digitalWrite(GLIDE_LED_GRN, HIGH);
       mcp1.digitalWrite(GLIDE_LED_RED, HIGH);
       break;
@@ -5239,6 +5239,32 @@ static inline String formatEnvTime(float sec) {
   }
 }
 
+static inline float glideSecFromU8(uint8_t v)
+{
+  if (v == 0) return 0.0f;
+
+  const float tMin = 0.001f;   // 1 ms
+  const float tMax = 8.0f;    // adjust if you want
+  const float ratio = tMax / tMin;
+
+  // 0..1
+  float x = (float)v / 255.0f;
+
+  // slope warp: <1.0 makes times larger earlier
+  const float gamma = 0.46f;   // start here; tweak 0.40..0.70 by ear
+  float shaped = powf(x, gamma);
+
+  return tMin * powf(ratio, shaped);
+}
+
+static inline String formatGlideTime(float sec)
+{
+  if (sec <= 0.0f) return "Off";
+  if (sec < 1.0f)  return String((int)lroundf(sec * 1000.0f)) + " ms";
+  if (sec < 10.0f) return String(sec, 2) + " s";
+  return String(sec, 1) + " s";
+}
+
 void myControlChange(byte channel, byte control, byte value) {
 
   switch (control) {
@@ -5296,17 +5322,20 @@ void myControlChange(byte channel, byte control, byte value) {
       }
 
     case CCglideTime:
-      if (upperSW) {
-        upperData[P_glideTime] = value;
-      } else {
-        lowerData[P_glideTime] = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_glideTime] = value;
+        } else {
+          lowerData[P_glideTime] = value;
+          if (wholemode) upperData[P_glideTime] = value;
         }
+
+        const float sec = glideSecFromU8(value);
+        glideTimestr = formatGlideTime(sec);
+
+        updateglideTime(true);
+        break;
       }
-      glideTimestr = value;
-      updateglideTime(1);
-      break;
 
     case CCvco2Fine:
       if (upperSW) {

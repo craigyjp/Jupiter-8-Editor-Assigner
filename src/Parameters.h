@@ -318,7 +318,7 @@ int oldlowerSW = 0;
 
 int resonancestr = 0;
 String filterCutoffstr = 0;
-float glideTimestr = 0;
+String glideTimestr = 0;
 String env1Attackstr = 0;
 String env1Decaystr = 0;
 int env1Sustainstr = 0;
