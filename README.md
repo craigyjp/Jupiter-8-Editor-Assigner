@@ -27,7 +27,7 @@ Program change 0-63 recalls patches 11-88, Program changes 64-127 recalls perfor
 # Things to do
 
 * General bug fixes/features as I find them.
-* Fix the sustain pedal input.
+* Possibly add the "Pickup" function as an option.
 
 
 
