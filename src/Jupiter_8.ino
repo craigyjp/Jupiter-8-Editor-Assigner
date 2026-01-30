@@ -6,6 +6,7 @@
 #include <MIDI.h>
 #include <USBHost_t36.h>
 #include "MidiCC.h"
+#include "MIDISysEx.h"
 #include "Constants.h"
 #include "Parameters.h"
 #include "PatchMgr.h"
@@ -55,10 +56,10 @@ struct Performance {
   uint8_t splitPoint = PERF_DEFAULT_SPLIT_POINT;  // 0..24
   uint8_t splitTrans = PERF_DEFAULT_SPLIT_TRANS;  // 0..4
 
-  uint8_t upperVol = PERF_DEFAULT_VOL;  // 0..127
-  uint8_t lowerVol = PERF_DEFAULT_VOL;  // 0..127
-  uint8_t upperBal = 63;                // 0..127 (center ~63/64)
-  uint8_t lowerBal = 63;                // 0..127
+  uint8_t upperVol = PERF_DEFAULT_VOL;  // 0..255
+  uint8_t lowerVol = PERF_DEFAULT_VOL;  // 0..255
+  uint8_t upperBal = 255;               // 0..255 (center ~127/128)
+  uint8_t lowerBal = 255;               // 0..255
 
   uint8_t arpRangeSW = 0;
   uint8_t arpModeSW = 0;
@@ -119,8 +120,8 @@ MIDIDevice midi1(myusb);
 
 //MIDI 5 Pin DIN
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);   // main MIDI in and out
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial6, MIDI6);  // MIDI out to voices
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial7, MIDI7);  // MIDI out to display (not connected)
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial6, MIDI6);  // MIDI out to lower
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial7, MIDI7);  // MIDI out to upper
 
 int patchNo = 0;
 int patchNoU = 0;
@@ -140,8 +141,8 @@ void onExtClockPulse() {
   if ((uint32_t)(nowUs - lastExtPulseUs) < EXT_PULSE_MIN_US) return;
   lastExtPulseUs = nowUs;
 
-  arpExtTickCount++;            // 1 pulse = 1 step
-  extClkLedPulseReq = true;     // handled in loop()
+  arpExtTickCount++;         // 1 pulse = 1 step
+  extClkLedPulseReq = true;  // handled in loop()
   extClkLedPulseAtMs = millis();
 }
 
@@ -295,7 +296,7 @@ void setup() {
 static inline void ensureJP8PatchBankInitialized() {
   ensureJP8BankFolders(activeBank);
 
-  const String initData = defaultPatchDataString(); // build once
+  const String initData = defaultPatchDataString();  // build once
 
   for (uint8_t r = 1; r <= 8; r++) {
     for (uint8_t c = 1; c <= 8; c++) {
@@ -364,7 +365,7 @@ static inline void commitBankSelect() {
   updateScreen();
 }
 
-static inline void bankSelectRotate(int dir) { // dir = +1 or -1
+static inline void bankSelectRotate(int dir) {  // dir = +1 or -1
   int next = (int)bankPreview + dir;
   if (next < 0) next = BANK_COUNT - 1;
   if (next >= BANK_COUNT) next = 0;
@@ -374,7 +375,54 @@ static inline void bankSelectRotate(int dir) { // dir = +1 or -1
   startParameterDisplay();
 }
 
-//DAC control
+// MID sysex
+
+static inline uint8_t rolandChecksum7(const uint8_t *bytes, uint8_t len) {
+  uint16_t sum = 0;
+  for (uint8_t i = 0; i < len; i++) sum += bytes[i];
+  return (uint8_t)((0x80 - (sum & 0x7F)) & 0x7F);
+}
+
+// Build JP-08 DT1 with NIBBLE value bytes (0..15, 0..15)
+static inline void jp08BuildDT1(uint8_t *msg, Addr2 addr, uint8_t value8) {
+  uint8_t valMSB = (value8 >> 4) & 0x0F;  // high nibble
+  uint8_t valLSB = value8 & 0x0F;         // low nibble
+
+  // checksum covers: 03 00 addrMSB addrLSB valueMSB valueLSB
+  uint8_t chkBytes[6] = { 0x03, 0x00, addr.a, addr.b, valMSB, valLSB };
+  uint8_t cs = rolandChecksum7(chkBytes, 6);
+
+  msg[0] = 0xF0;
+  msg[1] = 0x41;
+  msg[2] = 0x10;
+  msg[3] = 0x00;
+  msg[4] = 0x00;
+  msg[5] = 0x00;
+  msg[6] = 0x1C;
+  msg[7] = 0x12;
+  msg[8] = 0x03;
+  msg[9] = 0x00;
+  msg[10] = addr.a;
+  msg[11] = addr.b;
+  msg[12] = valMSB;  // nibble!
+  msg[13] = valLSB;  // nibble!
+  msg[14] = cs;
+  msg[15] = 0xF7;
+}
+
+static inline void jp08SendUpper(Addr2 addr, uint8_t value8) {
+  uint8_t msg[16];
+  jp08BuildDT1(msg, addr, value8);
+  MIDI7.sendSysEx(sizeof(msg), msg);  // Serial7 -> upper boutique
+}
+
+static inline void jp08SendLower(Addr2 addr, uint8_t value8) {
+  uint8_t msg[16];
+  jp08BuildDT1(msg, addr, value8);
+  MIDI6.sendSysEx(sizeof(msg), msg);  // Serial6 -> lower boutique
+}
+
+// DAC control
 
 void setVoltage(bool channel, bool gain, unsigned int mV) {
   int command = channel ? 0x9000 : 0x1000;
@@ -396,7 +444,7 @@ static uint8_t clamp_u8(uint8_t v, uint8_t lo, uint8_t hi) {
   return v;
 }
 
-static uint16_t pot_to_dac_code(uint8_t pot /*0..127*/, uint16_t dac_max /*2047 or 4095*/) {
+static uint16_t pot_to_dac_code(uint8_t pot /*0..255*/, uint16_t dac_max /*2047 or 4095*/) {
   pot = clamp_u8(pot, 0, POT_MAX);
   uint32_t num = (uint32_t)pot * (uint32_t)dac_max + (POT_MAX / 2u);
   return (uint16_t)(num / POT_MAX);
@@ -409,7 +457,7 @@ static uint16_t apply_q15(uint16_t code, uint16_t gain_q15 /*0..32768*/) {
   return (uint16_t)out;
 }
 
-static void balance_gains_q15(uint8_t bal /*0..127*/, uint16_t *upper_gain, uint16_t *lower_gain) {
+static void balance_gains_q15(uint8_t bal /*0..255*/, uint16_t *upper_gain, uint16_t *lower_gain) {
   bal = clamp_u8(bal, 0, POT_MAX);
 
   if (bal == BAL_CENTER) {
@@ -418,20 +466,20 @@ static void balance_gains_q15(uint8_t bal /*0..127*/, uint16_t *upper_gain, uint
     return;
   }
 
-    if (bal > BAL_CENTER) {
-    // Favor upper: upper stays 1.0, lower attenuates 1.0 -> 0.0 as 63 -> 127
-    const uint32_t denom = (POT_MAX - BAL_CENTER); // 64
-    const uint32_t numer = (POT_MAX - bal);        // 64..0
+  if (bal > BAL_CENTER) {
+    // Favor upper: upper stays 1.0, lower attenuates 1.0 -> 0.0 as 127 -> 255
+    const uint32_t denom = (POT_MAX - BAL_CENTER);  // 128
+    const uint32_t numer = (POT_MAX - bal);         // 128..0
     const uint32_t g = (numer * Q15_ONE + (denom / 2u)) / denom;
     *upper_gain = Q15_ONE;
     *lower_gain = (uint16_t)g;
     return;
   }
 
-  // Favor lower: lower stays 1.0, upper attenuates 1.0 -> 0.0 as 63 -> 0
+  // Favor lower: lower stays 1.0, upper attenuates 1.0 -> 0.0 as 127 -> 0
   {
-    const uint32_t denom = BAL_CENTER; // 63
-    const uint32_t numer = bal;        // 0..62
+    const uint32_t denom = BAL_CENTER;  // 127
+    const uint32_t numer = bal;         // 0..62
     const uint32_t g = (numer * Q15_ONE + (denom / 2u)) / denom;
     *upper_gain = (uint16_t)g;
     *lower_gain = Q15_ONE;
@@ -456,7 +504,6 @@ void applyVolumeBalanceToDacs(PlayMode mode) {
 
   setVoltage(0, 0, lower_code);
   setVoltage(1, 0, upper_code);
-
 }
 
 // MUX disable on boot
@@ -999,7 +1046,7 @@ inline void updateArpClockLEDs() {
 inline float arpHzFromValue(uint8_t v) {
   const float minHz = 1.0f;
   const float maxHz = 20.0f;
-  float t = v / 127.0f;
+  float t = v / 255.0f;
   return minHz * powf(maxHz / minHz, t);
 }
 
@@ -1523,26 +1570,26 @@ void ensureJP8PerformanceBankInitialized() {
   defaultPerf.mode = WHOLE;
 
   // Defaults (raw engine values)
-  defaultPerf.splitPoint = 12;   // 0..24
-  defaultPerf.splitTrans = 0;    // 0..4
+  defaultPerf.splitPoint = 12;  // 0..24
+  defaultPerf.splitTrans = 0;   // 0..4
 
-  defaultPerf.upperVol = 127;    // 0..127
-  defaultPerf.lowerVol = 127;    // 0..127
+  defaultPerf.upperVol = 255;  // 0..127
+  defaultPerf.lowerVol = 255;  // 0..127
 
-  defaultPerf.upperBal = 64;     // 0..127 (center)
-  defaultPerf.lowerBal = 64;     // 0..127 (center)
+  defaultPerf.upperBal = 128;  // 0..127 (center)
+  defaultPerf.lowerBal = 128;  // 0..127 (center)
 
   defaultPerf.arpRangeSW = 0;
   defaultPerf.arpModeSW = 0;
   defaultPerf.arpRate = 0;
-  defaultPerf.arpClockSrc = (uint8_t)ARPCLK_INTERNAL; // or ARPCLK_INTERNAL if field is enum
+  defaultPerf.arpClockSrc = (uint8_t)ARPCLK_INTERNAL;  // or ARPCLK_INTERNAL if field is enum
 
   for (uint8_t r = 1; r <= 8; r++) {
     for (uint8_t c = 1; c <= 8; c++) {
       const uint8_t rc = (uint8_t)(r * 10 + c);
       if (!jp8_isValidRC(rc)) continue;
 
-      const String path = perfPathFromRC(rc); // should be /banks/bXX/performances/perf##
+      const String path = perfPathFromRC(rc);  // should be /banks/bXX/performances/perf##
       if (!SD.exists(path.c_str())) {
         Performance p = defaultPerf;
         p.performanceNo = rc;
@@ -1656,19 +1703,17 @@ static inline int clampInt(int v, int lo, int hi) {
   return v;
 }
 
-// Engine representation: 0..127
-// Conceptual balance: -63..+63 (stored in Performance as int8_t)
 static inline int8_t decodeBalance0_127_to_m63_p63(int v0_127) {
-  v0_127 = clampInt(v0_127, 0, 127);
-  int b = v0_127 - 63;  // 0->-63, 63->0, 126->+63, 127->+64 (clamped below)
-  b = clampInt(b, -63, 63);
+  v0_127 = clampInt(v0_127, 0, 255);
+  int b = v0_127 - 127;  // 0->-63, 63->0, 126->+63, 127->+64 (clamped below)
+  b = clampInt(b, -127, 127);
   return (int8_t)b;
 }
 
 static inline uint8_t encodeBalance_m63_p63_to_0_127(int8_t b_m63_p63) {
-  int b = clampInt((int)b_m63_p63, -63, 63);
-  int v = b + 63;  // -63->0, 0->63, +63->126
-  v = clampInt(v, 0, 127);
+  int b = clampInt((int)b_m63_p63, -127, 127);
+  int v = b + 127;  // -63->0, 0->63, +63->126
+  v = clampInt(v, 0, 255);
   return (uint8_t)v;
 }
 
@@ -1681,15 +1726,15 @@ static inline void capturePerformanceExtrasFromEngine(Performance &p) {
   p.splitPoint = clampU8(splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT);
   p.splitTrans = clampU8(splitTrans, 0, 4, PERF_DEFAULT_SPLIT_TRANS);
 
-  p.upperVol = clampU8(upperData[P_volume], 0, 127, PERF_DEFAULT_VOL);
-  p.lowerVol = clampU8(lowerData[P_volume], 0, 127, PERF_DEFAULT_VOL);
+  p.upperVol = clampU8(upperData[P_volume], 0, 255, PERF_DEFAULT_VOL);
+  p.lowerVol = clampU8(lowerData[P_volume], 0, 255, PERF_DEFAULT_VOL);
 
-  p.upperBal = clampU8(upperData[P_balance], 0, 127, 63);
-  p.lowerBal = clampU8(lowerData[P_balance], 0, 127, 63);
+  p.upperBal = clampU8(upperData[P_balance], 0, 255, 127);
+  p.lowerBal = clampU8(lowerData[P_balance], 0, 255, 127);
 
   p.arpRangeSW = clampU8(lowerData[P_arpRangeSW], 0, 127, 0);
   p.arpModeSW = clampU8(lowerData[P_arpModeSW], 0, 127, 0);
-  p.arpRate = clampU8(lowerData[P_arpRate], 0, 127, 0);
+  p.arpRate = clampU8(lowerData[P_arpRate], 0, 255, 0);
   p.arpClockSrc = (uint8_t)arpClockSrc;
 }
 
@@ -1697,11 +1742,11 @@ static inline void applyPerformanceExtrasToEngine(const Performance &p) {
   splitPoint = clampU8(p.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT);
   splitTrans = clampU8(p.splitTrans, 0, 4, PERF_DEFAULT_SPLIT_TRANS);
 
-  upperData[P_volume] = clampU8(p.upperVol, 0, 127, PERF_DEFAULT_VOL);
-  lowerData[P_volume] = clampU8(p.lowerVol, 0, 127, PERF_DEFAULT_VOL);
+  upperData[P_volume] = clampU8(p.upperVol, 0, 255, PERF_DEFAULT_VOL);
+  lowerData[P_volume] = clampU8(p.lowerVol, 0, 255, PERF_DEFAULT_VOL);
 
-  upperData[P_balance] = clampU8(p.upperBal, 0, 127, 63);
-  lowerData[P_balance] = clampU8(p.lowerBal, 0, 127, 63);
+  upperData[P_balance] = clampU8(p.upperBal, 0, 255, 127);
+  lowerData[P_balance] = clampU8(p.lowerBal, 0, 255, 127);
 
   lowerData[P_arpRangeSW] = p.arpRangeSW;
   lowerData[P_arpModeSW] = p.arpModeSW;
@@ -2126,23 +2171,36 @@ void savePerformanceRC(uint8_t rc, const Performance &perfIn) {
   // v2: v2,upper,lower,name,mode,splitPoint,splitTrans,upperVol,lowerVol,upperBal,lowerBal,arpRangeSW,arpModeSW,arpRate,arpClockSrc
   file.print("v2,");
 
-  file.print((int)perf.upperPatchNo); file.print(",");
-  file.print((int)perf.lowerPatchNo); file.print(",");
-  file.print(perf.name);             file.print(",");
-  file.print((int)perf.mode);        file.print(",");
+  file.print((int)perf.upperPatchNo);
+  file.print(",");
+  file.print((int)perf.lowerPatchNo);
+  file.print(",");
+  file.print(perf.name);
+  file.print(",");
+  file.print((int)perf.mode);
+  file.print(",");
 
-  file.print((int)clampU8(perf.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT)); file.print(",");
-  file.print((int)clampU8(perf.splitTrans, 0, 4,  PERF_DEFAULT_SPLIT_TRANS)); file.print(","); // FIX 0..5
+  file.print((int)clampU8(perf.splitPoint, 0, 24, PERF_DEFAULT_SPLIT_POINT));
+  file.print(",");
+  file.print((int)clampU8(perf.splitTrans, 0, 4, PERF_DEFAULT_SPLIT_TRANS));
+  file.print(",");  // FIX 0..5
 
-  file.print((int)clampU8(perf.upperVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
-  file.print((int)clampU8(perf.lowerVol, 0, 127, PERF_DEFAULT_VOL)); file.print(",");
+  file.print((int)clampU8(perf.upperVol, 0, 255, PERF_DEFAULT_VOL));
+  file.print(",");
+  file.print((int)clampU8(perf.lowerVol, 0, 255, PERF_DEFAULT_VOL));
+  file.print(",");
 
-  file.print((int)clampU8(perf.upperBal, 0, 127, 64)); file.print(",");      // FIX default center 64
-  file.print((int)clampU8(perf.lowerBal, 0, 127, 64)); file.print(",");
+  file.print((int)clampU8(perf.upperBal, 0, 255, 128));
+  file.print(",");  // FIX default center 64
+  file.print((int)clampU8(perf.lowerBal, 0, 255, 128));
+  file.print(",");
 
-  file.print((int)clampU8(perf.arpRangeSW, 0, 127, 0)); file.print(",");
-  file.print((int)clampU8(perf.arpModeSW,  0, 127, 0)); file.print(",");
-  file.print((int)clampU8(perf.arpRate,    0, 127, 0)); file.print(",");
+  file.print((int)clampU8(perf.arpRangeSW, 0, 127, 0));
+  file.print(",");
+  file.print((int)clampU8(perf.arpModeSW, 0, 127, 0));
+  file.print(",");
+  file.print((int)clampU8(perf.arpRate, 0, 255, 0));
+  file.print(",");
   file.println((int)clampU8(perf.arpClockSrc, 0, 2, (uint8_t)ARPCLK_INTERNAL));
 
   file.close();
@@ -2159,16 +2217,18 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
   line.trim();
   if (!line.length()) return false;
 
-  out = Performance();     // defaults
+  out = Performance();  // defaults
   out.performanceNo = rc;
 
-  auto fieldOrEmpty = [&](int idx) -> String { return csvGetField(line, idx); };
+  auto fieldOrEmpty = [&](int idx) -> String {
+    return csvGetField(line, idx);
+  };
 
   if (line.startsWith("v2,")) {
     const String upperS = fieldOrEmpty(1);
     const String lowerS = fieldOrEmpty(2);
-    const String nameS  = fieldOrEmpty(3);
-    const String modeS  = fieldOrEmpty(4);
+    const String nameS = fieldOrEmpty(3);
+    const String modeS = fieldOrEmpty(4);
 
     if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
 
@@ -2189,18 +2249,18 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
     const String acS = fieldOrEmpty(14);
 
     if (spS.length()) out.splitPoint = clampU8(spS.toInt(), 0, 24, PERF_DEFAULT_SPLIT_POINT);
-    if (stS.length()) out.splitTrans = clampU8(stS.toInt(), 0, 4,  PERF_DEFAULT_SPLIT_TRANS); // FIX 0..4
+    if (stS.length()) out.splitTrans = clampU8(stS.toInt(), 0, 4, PERF_DEFAULT_SPLIT_TRANS);  // FIX 0..4
 
-    if (uvS.length()) out.upperVol = clampU8(uvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
-    if (lvS.length()) out.lowerVol = clampU8(lvS.toInt(), 0, 127, PERF_DEFAULT_VOL);
+    if (uvS.length()) out.upperVol = clampU8(uvS.toInt(), 0, 255, PERF_DEFAULT_VOL);
+    if (lvS.length()) out.lowerVol = clampU8(lvS.toInt(), 0, 255, PERF_DEFAULT_VOL);
 
-    if (ubS.length()) out.upperBal = clampU8(ubS.toInt(), 0, 127, 64);       // FIX use ubS
-    if (lbS.length()) out.lowerBal = clampU8(lbS.toInt(), 0, 127, 64);       // FIX use lbS (was field 9)
+    if (ubS.length()) out.upperBal = clampU8(ubS.toInt(), 0, 255, 128);  // FIX use ubS
+    if (lbS.length()) out.lowerBal = clampU8(lbS.toInt(), 0, 255, 128);  // FIX use lbS (was field 9)
 
     if (arS.length()) out.arpRangeSW = clampU8(arS.toInt(), 0, 127, 0);
-    if (amS.length()) out.arpModeSW  = clampU8(amS.toInt(), 0, 127, 0);
-    if (atS.length()) out.arpRate    = clampU8(atS.toInt(), 0, 127, 0);
-    if (acS.length()) out.arpClockSrc= clampU8(acS.toInt(), 0, 2, (uint8_t)ARPCLK_INTERNAL);  // FIX use acS
+    if (amS.length()) out.arpModeSW = clampU8(amS.toInt(), 0, 127, 0);
+    if (atS.length()) out.arpRate = clampU8(atS.toInt(), 0, 255, 0);
+    if (acS.length()) out.arpClockSrc = clampU8(acS.toInt(), 0, 2, (uint8_t)ARPCLK_INTERNAL);  // FIX use acS
 
     return true;
   }
@@ -2208,8 +2268,8 @@ bool loadPerformanceRC(uint8_t rc, Performance &out) {
   // v1: upper,lower,name,mode
   const String upperS = fieldOrEmpty(0);
   const String lowerS = fieldOrEmpty(1);
-  const String nameS  = fieldOrEmpty(2);
-  const String modeS  = fieldOrEmpty(3);
+  const String nameS = fieldOrEmpty(2);
+  const String modeS = fieldOrEmpty(3);
 
   if (!upperS.length() || !lowerS.length() || !nameS.length() || !modeS.length()) return false;
 
@@ -3231,15 +3291,12 @@ void updatePWMMod(boolean announce) {
     showCurrentParameterPage("VCO PWM", int(PWMModstr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCPWMMod, upperData[P_PWMMod]);
-    midiCCOutUpper(CCPWMMod, upperData[P_PWMMod]);
+    jp08SendUpper(VCOMOD_PULSEWIDTHMOD, upperData[P_PWMMod]);
   } else {
-    midiCCOut(CCPWMMod, lowerData[P_PWMMod]);
-    midiCCOutLower(CCPWMMod, lowerData[P_PWMMod]);
-    if (wholemode) {
-      midiCCOutUpper(CCPWMMod, upperData[P_PWMMod]);
-    }
+    jp08SendLower(VCOMOD_PULSEWIDTHMOD, lowerData[P_PWMMod]);
+    if (wholemode) jp08SendUpper(VCOMOD_PULSEWIDTHMOD, upperData[P_PWMMod]);
   }
 }
 
@@ -3248,64 +3305,54 @@ void updatecrossMod(boolean announce) {
     showCurrentParameterPage("VCO Cross Mod", int(crossModstr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCcrossMod, upperData[P_crossMod]);
-    midiCCOutUpper(CCcrossMod, upperData[P_crossMod]);
+    jp08SendUpper(VCOMOD_CROSSMOD, upperData[P_crossMod]);
   } else {
-    midiCCOut(CCcrossMod, lowerData[P_crossMod]);
-    midiCCOutLower(CCcrossMod, lowerData[P_crossMod]);
-    if (wholemode) {
-      midiCCOutUpper(CCcrossMod, upperData[P_crossMod]);
-    }
+    jp08SendLower(VCOMOD_CROSSMOD, lowerData[P_crossMod]);
+    if (wholemode) jp08SendUpper(VCOMOD_CROSSMOD, upperData[P_crossMod]);
   }
 }
 
 void updateglideTime(boolean announce) {
   if (announce && !suppressParamAnnounce) {
     showCurrentParameterPage("Glide Time", String(glideTimestr * 10) + " Seconds");
+    startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCglideTime, upperData[P_glideTime]);
-    midiCCOutUpper(CCglideTime, upperData[P_glideTime]);
+    jp08SendUpper(GLIDE_TIME, upperData[P_glideTime]);
   } else {
-    midiCCOut(CCglideTime, lowerData[P_glideTime]);
-    midiCCOutLower(CCglideTime, lowerData[P_glideTime]);
-    if (wholemode) {
-      midiCCOutUpper(CCglideTime, upperData[P_glideTime]);
-    }
+    jp08SendLower(GLIDE_TIME, lowerData[P_glideTime]);
+    if (wholemode) jp08SendUpper(GLIDE_TIME, upperData[P_glideTime]);
   }
 }
 
 void updateFilterCutoff(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    showCurrentParameterPage("Cutoff", String(filterCutoffstr) + " Hz");
+    showCurrentParameterPage("Cutoff", filterCutoffstr);
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCfilterCutoff, upperData[P_filterCutoff]);
-    midiCCOutUpper(CCfilterCutoff, upperData[P_filterCutoff]);
+    jp08SendUpper(VCF_CUTOFF, upperData[P_filterCutoff]);
   } else {
-    midiCCOut(CCfilterCutoff, lowerData[P_filterCutoff]);
-    midiCCOutLower(CCfilterCutoff, lowerData[P_filterCutoff]);
-    if (wholemode) {
-      midiCCOutUpper(CCfilterCutoff, upperData[P_filterCutoff]);
-    }
+    jp08SendLower(VCF_CUTOFF, lowerData[P_filterCutoff]);
+    if (wholemode) jp08SendUpper(VCF_CUTOFF, upperData[P_filterCutoff]);
   }
 }
 
 void updatevcfLfoDepth(boolean announce) {
   if (announce && !suppressParamAnnounce) {
     showCurrentParameterPage("TM depth", int(vcfLfoDepthstr));
+    startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvcfLfoDepth, upperData[P_vcfLfoDepth]);
-    midiCCOutUpper(CCvcfLfoDepth, upperData[P_vcfLfoDepth]);
+    jp08SendUpper(VCF_LFO_MOD, upperData[P_vcfLfoDepth]);
   } else {
-    midiCCOut(CCvcfLfoDepth, lowerData[P_vcfLfoDepth]);
-    midiCCOutLower(CCvcfLfoDepth, lowerData[P_vcfLfoDepth]);
-    if (wholemode) {
-      midiCCOutUpper(CCvcfLfoDepth, upperData[P_vcfLfoDepth]);
-    }
+    jp08SendLower(VCF_LFO_MOD, lowerData[P_vcfLfoDepth]);
+    if (wholemode) jp08SendUpper(VCF_LFO_MOD, upperData[P_vcfLfoDepth]);
   }
 }
 
@@ -3314,15 +3361,12 @@ void updateresonance(boolean announce) {
     showCurrentParameterPage("Resonance", int(resonancestr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCresonance, upperData[P_resonance]);
-    midiCCOutUpper(CCresonance, upperData[P_resonance]);
+    jp08SendUpper(VCF_REZ, upperData[P_resonance]);
   } else {
-    midiCCOut(CCresonance, lowerData[P_resonance]);
-    midiCCOutLower(CCresonance, lowerData[P_resonance]);
-    if (wholemode) {
-      midiCCOutUpper(CCresonance, upperData[P_resonance]);
-    }
+    jp08SendLower(VCF_REZ, lowerData[P_resonance]);
+    if (wholemode) jp08SendUpper(VCF_REZ, upperData[P_resonance]);
   }
 }
 
@@ -3331,15 +3375,12 @@ void updatevcfEnvDepth(boolean announce) {
     showCurrentParameterPage("EG Depth", int(vcfEnvDepthstr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvcfEnvDepth, upperData[P_vcfEnvDepth]);
-    midiCCOutUpper(CCvcfEnvDepth, upperData[P_vcfEnvDepth]);
+    jp08SendUpper(VCF_ENV_MOD, upperData[P_vcfEnvDepth]);
   } else {
-    midiCCOut(CCvcfEnvDepth, lowerData[P_vcfEnvDepth]);
-    midiCCOutLower(CCvcfEnvDepth, lowerData[P_vcfEnvDepth]);
-    if (wholemode) {
-      midiCCOutUpper(CCvcfEnvDepth, upperData[P_vcfEnvDepth]);
-    }
+    jp08SendLower(VCF_ENV_MOD, lowerData[P_vcfEnvDepth]);
+    if (wholemode) jp08SendUpper(VCF_ENV_MOD, upperData[P_vcfEnvDepth]);
   }
 }
 
@@ -3348,15 +3389,12 @@ void updatevcfKeyFollow(boolean announce) {
     showCurrentParameterPage("Key Follow", String(vcfKeyFollowstr) + " %");
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvcfKeyFollow, upperData[P_vcfKeyFollow]);
-    midiCCOutUpper(CCvcfKeyFollow, upperData[P_vcfKeyFollow]);
+    jp08SendUpper(VCF_KEYFOLLOW, upperData[P_vcfKeyFollow]);
   } else {
-    midiCCOut(CCvcfKeyFollow, lowerData[P_vcfKeyFollow]);
-    midiCCOutLower(CCvcfKeyFollow, lowerData[P_vcfKeyFollow]);
-    if (wholemode) {
-      midiCCOutUpper(CCvcfKeyFollow, upperData[P_vcfKeyFollow]);
-    }
+    jp08SendLower(VCF_KEYFOLLOW, lowerData[P_vcfKeyFollow]);
+    if (wholemode) jp08SendUpper(VCF_KEYFOLLOW, upperData[P_vcfKeyFollow]);
   }
 }
 
@@ -3365,15 +3403,12 @@ void updatevcaLevel(boolean announce) {
     showCurrentParameterPage("VCA Level", String(vcaLevelstr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvcaLevel, upperData[P_vcaLevel]);
-    midiCCOutUpper(CCvcaLevel, upperData[P_vcaLevel]);
+    jp08SendUpper(VCA_LEVEL, upperData[P_vcaLevel]);
   } else {
-    midiCCOut(CCvcaLevel, lowerData[P_vcaLevel]);
-    midiCCOutLower(CCvcaLevel, lowerData[P_vcaLevel]);
-    if (wholemode) {
-      midiCCOutUpper(CCvcaLevel, upperData[P_vcaLevel]);
-    }
+    jp08SendLower(VCA_LEVEL, lowerData[P_vcaLevel]);
+    if (wholemode) jp08SendUpper(VCA_LEVEL, upperData[P_vcaLevel]);
   }
 }
 
@@ -3485,15 +3520,12 @@ void updateLFORate(boolean announce) {
     showCurrentParameterPage("LFO Rate", String(LFORatestr) + " Hz");
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CClfoRate, upperData[P_lfoRate]);
-    midiCCOutUpper(CClfoRate, upperData[P_lfoRate]);
+    jp08SendUpper(LFO_RATE, upperData[P_lfoRate]);
   } else {
-    midiCCOut(CClfoRate, lowerData[P_lfoRate]);
-    midiCCOutLower(CClfoRate, lowerData[P_lfoRate]);
-    if (wholemode) {
-      midiCCOutUpper(CClfoRate, upperData[P_lfoRate]);
-    }
+    jp08SendLower(LFO_RATE, lowerData[P_lfoRate]);
+    if (wholemode) jp08SendUpper(LFO_RATE, upperData[P_lfoRate]);
   }
 }
 
@@ -3559,15 +3591,12 @@ void updatelfoDelay(boolean announce) {
     showCurrentParameterPage("LFO Delay", String(lfoDelaystr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CClfoDelay, upperData[P_lfoDelay]);
-    midiCCOutUpper(CClfoDelay, upperData[P_lfoDelay]);
+    jp08SendUpper(LFO_DELAY_TIME, upperData[P_lfoDelay]);
   } else {
-    midiCCOut(CClfoDelay, lowerData[P_lfoDelay]);
-    midiCCOutLower(CClfoDelay, lowerData[P_lfoDelay]);
-    if (wholemode) {
-      midiCCOutUpper(CClfoDelay, upperData[P_lfoDelay]);
-    }
+    jp08SendLower(LFO_DELAY_TIME, lowerData[P_lfoDelay]);
+    if (wholemode) jp08SendUpper(LFO_DELAY_TIME, upperData[P_lfoDelay]);
   }
 }
 
@@ -3576,15 +3605,12 @@ void updatevcoLfoMod(boolean announce) {
     showCurrentParameterPage("LFO VCO Mod", String(vcoLfoModstr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvcoLfoMod, upperData[P_vcoLfoMod]);
-    midiCCOutUpper(CCvcoLfoMod, upperData[P_vcoLfoMod]);
+    jp08SendUpper(VCOMOD_LFO_MOD, upperData[P_vcoLfoMod]);
   } else {
-    midiCCOut(CCvcoLfoMod, lowerData[P_vcoLfoMod]);
-    midiCCOutLower(CCvcoLfoMod, lowerData[P_vcoLfoMod]);
-    if (wholemode) {
-      midiCCOutUpper(CCvcoLfoMod, upperData[P_vcoLfoMod]);
-    }
+    jp08SendLower(VCOMOD_LFO_MOD, lowerData[P_vcoLfoMod]);
+    if (wholemode) jp08SendUpper(VCOMOD_LFO_MOD, upperData[P_vcoLfoMod]);
   }
 }
 
@@ -3593,15 +3619,12 @@ void updatevcoEnvMod(boolean announce) {
     showCurrentParameterPage("ENV VCO Mod", String(vcoEnvModstr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvcoEnvMod, upperData[P_vcoEnvMod]);
-    midiCCOutUpper(CCvcoEnvMod, upperData[P_vcoEnvMod]);
+    jp08SendUpper(VCOMOD_ENV_MOD, upperData[P_vcoEnvMod]);
   } else {
-    midiCCOut(CCvcoEnvMod, lowerData[P_vcoEnvMod]);
-    midiCCOutLower(CCvcoEnvMod, lowerData[P_vcoEnvMod]);
-    if (wholemode) {
-      midiCCOutUpper(CCvcoEnvMod, upperData[P_vcoEnvMod]);
-    }
+    jp08SendLower(VCOMOD_ENV_MOD, lowerData[P_vcoEnvMod]);
+    if (wholemode) jp08SendUpper(VCOMOD_ENV_MOD, upperData[P_vcoEnvMod]);
   }
 }
 
@@ -3738,15 +3761,15 @@ void updatevco2Range(boolean announce) {
 
   if (announce && !suppressParamAnnounce) {
     if (vco2WaveformDisplay < 3) {
-      if (vco2RangeDisplay < 0x08) {
+      if (vco2RangeDisplay < 0x10) {
         StratuslfoWaveform = "64 Foot";
-      } else if (vco2RangeDisplay < 0x20) {
-        StratuslfoWaveform = "32 Foot";
       } else if (vco2RangeDisplay < 0x40) {
+        StratuslfoWaveform = "32 Foot";
+      } else if (vco2RangeDisplay < 0x80) {
         StratuslfoWaveform = "16 Foot";
-      } else if (vco2RangeDisplay < 0x60) {
+      } else if (vco2RangeDisplay < 0xC0) {
         StratuslfoWaveform = "8 Foot";
-      } else if (vco2RangeDisplay < 0x77) {
+      } else if (vco2RangeDisplay < 0xEE) {
         StratuslfoWaveform = "4 Foot";
       } else {
         StratuslfoWaveform = "2 Foot";
@@ -3757,15 +3780,12 @@ void updatevco2Range(boolean announce) {
     }
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvco2Range, upperData[P_vco2Range]);
-    midiCCOutUpper(CCvco2Range, upperData[P_vco2Range]);
+    jp08SendUpper(VCO2_RANGE, upperData[P_vco2Range]);
   } else {
-    midiCCOut(CCvco2Range, lowerData[P_vco2Range]);
-    midiCCOutLower(CCvco2Range, lowerData[P_vco2Range]);
-    if (wholemode) {
-      midiCCOutUpper(CCvco2Range, upperData[P_vco2Range]);
-    }
+    jp08SendLower(VCO2_RANGE, lowerData[P_vco2Range]);
+    if (wholemode) jp08SendUpper(VCO2_RANGE, upperData[P_vco2Range]);
   }
 }
 
@@ -3831,15 +3851,12 @@ void updatevco2Fine(boolean announce) {
     }
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvco2Fine, upperData[P_vco2Fine]);
-    midiCCOutUpper(CCvco2Fine, upperData[P_vco2Fine]);
+    jp08SendUpper(VCO2_TUNE, upperData[P_vco2Fine]);
   } else {
-    midiCCOut(CCvco2Fine, lowerData[P_vco2Fine]);
-    midiCCOutLower(CCvco2Fine, lowerData[P_vco2Fine]);
-    if (wholemode) {
-      midiCCOutUpper(CCvco2Fine, upperData[P_vco2Fine]);
-    }
+    jp08SendLower(VCO2_TUNE, lowerData[P_vco2Fine]);
+    if (wholemode) jp08SendUpper(VCO2_TUNE, upperData[P_vco2Fine]);
   }
 }
 
@@ -3852,15 +3869,12 @@ void updatevcoBalance(boolean announce) {
     }
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCvcoBalance, upperData[P_vcoBalance]);
-    midiCCOutUpper(CCvcoBalance, upperData[P_vcoBalance]);
+    jp08SendUpper(VCO1_2_SOURCEMIX, upperData[P_vcoBalance]);
   } else {
-    midiCCOut(CCvcoBalance, lowerData[P_vcoBalance]);
-    midiCCOutLower(CCvcoBalance, lowerData[P_vcoBalance]);
-    if (wholemode) {
-      midiCCOutUpper(CCvcoBalance, upperData[P_vcoBalance]);
-    }
+    jp08SendLower(VCO1_2_SOURCEMIX, lowerData[P_vcoBalance]);
+    if (wholemode) jp08SendUpper(VCO1_2_SOURCEMIX, upperData[P_vcoBalance]);
   }
 }
 
@@ -3869,175 +3883,124 @@ void updateHPF(boolean announce) {
     showCurrentParameterPage("HPF Cutoff", String(HPFstr));
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCHPF, upperData[P_HPF]);
-    midiCCOutUpper(CCHPF, upperData[P_HPF]);
+    jp08SendUpper(HPF_CUTOFF, upperData[P_HPF]);
   } else {
-    midiCCOut(CCHPF, lowerData[P_HPF]);
-    midiCCOutLower(CCHPF, lowerData[P_HPF]);
-    if (wholemode) {
-      midiCCOutUpper(CCHPF, upperData[P_HPF]);
-    }
+    jp08SendLower(HPF_CUTOFF, lowerData[P_HPF]);
+    if (wholemode) jp08SendUpper(HPF_CUTOFF, upperData[P_HPF]);
   }
 }
 
 void updateenv1Attack(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    if (env1Attackstr < 1000) {
-      showCurrentParameterPage("ENV1 Attack", String(int(env1Attackstr)) + " ms", FILTER_ENV);
-    } else {
-      showCurrentParameterPage("ENV1 Attack", String(env1Attackstr * 0.001) + " s", FILTER_ENV);
-    }
+    showCurrentParameterPage("Env1 Attack", env1Attackstr);
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv1Attack, upperData[P_env1Attack]);
-    midiCCOutUpper(CCenv1Attack, upperData[P_env1Attack]);
+    jp08SendUpper(ENV1_A, upperData[P_env1Attack]);
   } else {
-    midiCCOut(CCenv1Attack, lowerData[P_env1Attack]);
-    midiCCOutLower(CCenv1Attack, lowerData[P_env1Attack]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv1Attack, upperData[P_env1Attack]);
-    }
+    jp08SendLower(ENV1_A, lowerData[P_env1Attack]);
+    if (wholemode) jp08SendUpper(ENV1_A, upperData[P_env1Attack]);
   }
 }
 
 void updateenv1Decay(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    if (env1Decaystr < 1000) {
-      showCurrentParameterPage("ENV1 Decay", String(int(env1Decaystr)) + " ms", FILTER_ENV);
-    } else {
-      showCurrentParameterPage("ENV1 Decay", String(env1Decaystr * 0.001) + " s", FILTER_ENV);
-    }
+    showCurrentParameterPage("Env1 Decay", env1Decaystr);
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv1Decay, upperData[P_env1Decay]);
-    midiCCOutUpper(CCenv1Decay, upperData[P_env1Decay]);
+    jp08SendUpper(ENV1_D, upperData[P_env1Decay]);
   } else {
-    midiCCOut(CCenv1Decay, lowerData[P_env1Decay]);
-    midiCCOutLower(CCenv1Decay, lowerData[P_env1Decay]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv1Decay, upperData[P_env1Decay]);
-    }
+    jp08SendLower(ENV1_D, lowerData[P_env1Decay]);
+    if (wholemode) jp08SendUpper(ENV1_D, upperData[P_env1Decay]);
   }
 }
 
 void updateenv1Sustain(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    showCurrentParameterPage("ENV1 Sustain", String(env1Sustainstr), FILTER_ENV);
+    showCurrentParameterPage("ENV1 Sustain", String(env1Sustainstr) + " %");
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv1Sustain, upperData[P_env1Sustain]);
-    midiCCOutUpper(CCenv1Sustain, upperData[P_env1Sustain]);
+    jp08SendUpper(ENV1_S, upperData[P_env1Sustain]);
   } else {
-    midiCCOut(CCenv1Sustain, lowerData[P_env1Sustain]);
-    midiCCOutLower(CCenv1Sustain, lowerData[P_env1Sustain]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv1Sustain, upperData[P_env1Sustain]);
-    }
+    jp08SendLower(ENV1_S, lowerData[P_env1Sustain]);
+    if (wholemode) jp08SendUpper(ENV1_S, upperData[P_env1Sustain]);
   }
 }
 
 void updateenv1Release(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    if (env1Releasestr < 1000) {
-      showCurrentParameterPage("ENV1 Release", String(int(env1Releasestr)) + " ms", FILTER_ENV);
-    } else {
-      showCurrentParameterPage("ENV1 Release", String(env1Releasestr * 0.001) + " s", FILTER_ENV);
-    }
+    showCurrentParameterPage("Env1 Release", env1Releasestr);
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv1Release, upperData[P_env1Release]);
-    midiCCOutUpper(CCenv1Release, upperData[P_env1Release]);
+    jp08SendUpper(ENV1_R, upperData[P_env1Release]);
   } else {
-    midiCCOut(CCenv1Release, lowerData[P_env1Release]);
-    midiCCOutLower(CCenv1Release, lowerData[P_env1Release]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv1Release, upperData[P_env1Release]);
-    }
+    jp08SendLower(ENV1_R, lowerData[P_env1Release]);
+    if (wholemode) jp08SendUpper(ENV1_R, upperData[P_env1Release]);
   }
 }
 
 void updateenv2Attack(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    if (env2Attackstr < 1000) {
-      showCurrentParameterPage("ENV2 Attack", String(int(env2Attackstr)) + " ms", AMP_ENV);
-    } else {
-      showCurrentParameterPage("ENV2 Attack", String(env2Attackstr * 0.001) + " s", AMP_ENV);
-    }
+    showCurrentParameterPage("Env2 Attack", env2Attackstr);
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv2Attack, upperData[P_env2Attack]);
-    midiCCOutUpper(CCenv2Attack, upperData[P_env2Attack]);
+    jp08SendUpper(ENV2_A, upperData[P_env2Attack]);
   } else {
-    midiCCOut(CCenv2Attack, lowerData[P_env2Attack]);
-    midiCCOutLower(CCenv2Attack, lowerData[P_env2Attack]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv2Attack, upperData[P_env2Attack]);
-    }
+    jp08SendLower(ENV2_A, lowerData[P_env2Attack]);
+    if (wholemode) jp08SendUpper(ENV2_A, upperData[P_env2Attack]);
   }
 }
 
 void updateenv2Decay(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    if (env2Decaystr < 1000) {
-      showCurrentParameterPage("ENV2 Decay", String(int(env2Decaystr)) + " ms", AMP_ENV);
-    } else {
-      showCurrentParameterPage("ENV2 Decay", String(env2Decaystr * 0.001) + " s", AMP_ENV);
-    }
+    showCurrentParameterPage("Env2 Decay", env2Decaystr);
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv2Decay, upperData[P_env2Decay]);
-    midiCCOutUpper(CCenv2Decay, upperData[P_env2Decay]);
+    jp08SendUpper(ENV2_D, upperData[P_env2Decay]);
   } else {
-    midiCCOut(CCenv2Decay, lowerData[P_env2Decay]);
-    midiCCOutLower(CCenv2Decay, lowerData[P_env2Decay]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv2Decay, upperData[P_env2Decay]);
-    }
+    jp08SendLower(ENV2_D, lowerData[P_env2Decay]);
+    if (wholemode) jp08SendUpper(ENV2_D, upperData[P_env2Decay]);
   }
 }
 
 void updateenv2Sustain(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    showCurrentParameterPage("ENV2 Sustain", String(env2Sustainstr), AMP_ENV);
+    showCurrentParameterPage("ENV2 Sustain", String(env2Sustainstr) + " %");
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv2Sustain, upperData[P_env2Sustain]);
-    midiCCOutUpper(CCenv2Sustain, upperData[P_env2Sustain]);
+    jp08SendUpper(ENV2_S, upperData[P_env2Sustain]);
   } else {
-    midiCCOut(CCenv2Sustain, lowerData[P_env2Sustain]);
-    midiCCOutLower(CCenv2Sustain, lowerData[P_env2Sustain]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv2Sustain, upperData[P_env2Sustain]);
-    }
+    jp08SendLower(ENV2_S, lowerData[P_env2Sustain]);
+    if (wholemode) jp08SendUpper(ENV2_S, upperData[P_env2Sustain]);
   }
 }
 
 void updateenv2Release(boolean announce) {
   if (announce && !suppressParamAnnounce) {
-    if (env2Releasestr < 1000) {
-      showCurrentParameterPage("ENV2 Release", String(int(env2Releasestr)) + " ms", AMP_ENV);
-    } else {
-      showCurrentParameterPage("ENV2 Release", String(env2Releasestr * 0.001) + " s", AMP_ENV);
-    }
+    showCurrentParameterPage("Env2Release", env2Releasestr);
     startParameterDisplay();
   }
+
   if (upperSW) {
-    midiCCOut(CCenv2Release, upperData[P_env2Release]);
-    midiCCOutUpper(CCenv2Release, upperData[P_env2Release]);
+    jp08SendUpper(ENV2_R, upperData[P_env2Release]);
   } else {
-    midiCCOut(CCenv2Release, lowerData[P_env2Release]);
-    midiCCOutLower(CCenv2Release, lowerData[P_env2Release]);
-    if (wholemode) {
-      midiCCOutUpper(CCenv2Release, upperData[P_env2Release]);
-    }
+    jp08SendLower(ENV2_R, lowerData[P_env2Release]);
+    if (wholemode) jp08SendUpper(ENV2_R, upperData[P_env2Release]);
   }
 }
 
@@ -4054,8 +4017,13 @@ void updatevolume(boolean announce) {
 }
 
 void updatebalance(boolean announce) {
+
   if (announce && !suppressParamAnnounce) {
-    showCurrentParameterPage("Balance", int(balancestr));
+    if (balancestr > 0) {
+      showCurrentParameterPage("Balance", "+" + String(balancestr));
+    } else {
+      showCurrentParameterPage("Balance", String(balancestr));
+    }
     startParameterDisplay();
   }
 
@@ -4219,9 +4187,9 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(POLY1_LED, HIGH);
       midiCCOutLower(CCassignMode, lowerData[P_keyboardModeSW]);
       midiCCOut(CCkeyboardMode, lowerData[P_keyboardModeSW]);
-        if (wholemode) {
-          midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
-        }
+      if (wholemode) {
+        midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      }
     } else if (lowerData[P_keyboardModeSW] == 1) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Poly 2");
@@ -4233,9 +4201,9 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(POLY2_LED, HIGH);
       midiCCOutLower(CCassignMode, lowerData[P_keyboardModeSW]);
       midiCCOut(CCkeyboardMode, lowerData[P_keyboardModeSW]);
-        if (wholemode) {
-          midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
-        }
+      if (wholemode) {
+        midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+      }
     } else if (lowerData[P_keyboardModeSW] == 2) {
       if (announce && !suppressParamAnnounce) {
         showCurrentParameterPage("Keyboard Mode", "Mono");
@@ -4247,7 +4215,7 @@ void updatekeyboardMode(boolean announce) {
       mcp3.digitalWrite(SOLO_LED, HIGH);
       midiCCOutLower(CCassignMode, lowerData[P_keyboardModeSW]);
       if (wholemode) {
-          midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
+        midiCCOutUpper(CCassignMode, upperData[P_keyboardModeSW]);
       }
       midiCCOut(CCkeyboardMode, lowerData[P_keyboardModeSW]);
     } else if (lowerData[P_keyboardModeSW] == 3) {
@@ -5217,14 +5185,68 @@ void updatePatchname() {
   refreshPatchDisplayFromState();
 }
 
+static inline float lfoHzFromU8(uint8_t v) {
+  const float fMin = 0.05f;
+  const float ratio = 40.0f / 0.05f;  // 800
+  return fMin * powf(ratio, (float)v / 255.0f);
+}
+
+static inline String formatHz(float hz) {
+  if (hz < 1.0f) return String(hz, 3);
+  else if (hz < 10.0f) return String(hz, 2);
+  else return String(hz, 1);
+}
+
+static inline float cutoffHzFromU8(uint8_t v) {
+  const float fMin = 20.0f;
+  const float fMax = 16000.0f;
+  const float ratio = fMax / fMin;  // 800
+  return fMin * powf(ratio, (float)v / 255.0f);
+}
+
+static inline String formatCutoff(float hz) {
+  if (hz < 1000.0f) {
+    // 20–999 Hz: integer is usually fine (or 1 dp if you want)
+    return String((int)lroundf(hz)) + " Hz";
+  } else {
+    // 1.00–16.0 kHz
+    float khz = hz / 1000.0f;
+    if (khz < 10.0f) return String(khz, 2) + " kHz";
+    else return String(khz, 1) + " kHz";
+  }
+}
+
+static inline float envAttackFromU8(uint8_t v) {
+  const float tMin = 0.001f;          // 1 ms
+  const float ratio = 5.0f / 0.001f;  // 5000
+  return tMin * powf(ratio, (float)v / 255.0f);
+}
+
+static inline float envDecayFromU8(uint8_t v) {
+  const float tMin = 0.001f;           // 1 ms
+  const float ratio = 10.0f / 0.001f;  // 1000
+  return tMin * powf(ratio, (float)v / 255.0f);
+}
+
+static inline String formatEnvTime(float sec) {
+  if (sec < 1.0f) {
+    // show milliseconds
+    return String((int)lroundf(sec * 1000.0f)) + " ms";
+  } else {
+    // show seconds
+    if (sec < 10.0f) return String(sec, 2) + " s";
+    else return String(sec, 1) + " s";
+  }
+}
+
 void myControlChange(byte channel, byte control, byte value) {
 
   switch (control) {
 
     case CCsustain:
 
-    break;
-   
+      break;
+
     case CCmodwheel:
       {
         uint8_t mw = value;  // 0..127
@@ -5282,7 +5304,7 @@ void myControlChange(byte channel, byte control, byte value) {
           upperData[P_glideTime] = value;
         }
       }
-      glideTimestr = LINEAR[value];
+      glideTimestr = value;
       updateglideTime(1);
       break;
 
@@ -5296,8 +5318,8 @@ void myControlChange(byte channel, byte control, byte value) {
         }
       }
       // Display mapping: 0–127 → -63…+63 (center = 0)
-      fineDisp = (int16_t)value - 64;
-      fineDisp = constrain(fineDisp, -63, 63);
+      fineDisp = (int16_t)value - 128;
+      fineDisp = constrain(fineDisp, -127, 127);
 
       vco2Finestr = fineDisp;
       updatevco2Fine(1);
@@ -5313,8 +5335,8 @@ void myControlChange(byte channel, byte control, byte value) {
         }
       }
       // Display mapping: 0–127 → -63…+63 (center = 0)
-      fineDisp = (int16_t)value - 64;
-      fineDisp = constrain(fineDisp, -63, 63);
+      fineDisp = (int16_t)value - 128;
+      fineDisp = constrain(fineDisp, -127, 127);
 
       vcoBalancestr = fineDisp;
       updatevcoBalance(1);
@@ -5399,20 +5421,25 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCfilterCutoff:
-      if (upperSW) {
-        upperData[P_filterCutoff] = value;
-        oldfilterCutoffU = value;
-      } else {
-        lowerData[P_filterCutoff] = value;
-        oldfilterCutoffL = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_filterCutoff] = value;
           oldfilterCutoffU = value;
+        } else {
+          lowerData[P_filterCutoff] = value;
+          oldfilterCutoffL = value;
+          if (wholemode) {
+            upperData[P_filterCutoff] = value;
+            oldfilterCutoffU = value;
+          }
         }
+
+        const float hz = cutoffHzFromU8(value);
+        filterCutoffstr = formatCutoff(hz);
+
+        updateFilterCutoff(1);
+        break;
       }
-      filterCutoffstr = FILTERCUTOFF[value];
-      updateFilterCutoff(1);
-      break;
 
     case CCvcfLfoDepth:
       if (upperSW) {
@@ -5462,7 +5489,7 @@ void myControlChange(byte channel, byte control, byte value) {
           upperData[P_vcfKeyFollow] = value;
         }
       }
-      vcfKeyFollowstr = map(value, 0, 127, 0, 120);  // for display
+      vcfKeyFollowstr = map(value, 0, 255, 0, 120);  // for display
       updatevcfKeyFollow(1);
       break;
 
@@ -5480,7 +5507,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCdelayLevel:
-      value = map(value, 0, 127, 0, 15);
+      value = map(value, 0, 255, 0, 15);
       if (upperSW) {
         upperData[P_delayLevel] = value;
       } else {
@@ -5494,7 +5521,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCbendRange:
-      value = map(value, 0, 127, 0, 12);
+      value = map(value, 0, 255, 0, 12);
       if (upperSW) {
         upperData[P_vcoBendRange] = value;
       } else {
@@ -5508,7 +5535,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCATDepth:
-      value = map(value, 0, 127, 0, 10);
+      value = map(value, 0, 255, 0, 10);
       if (upperSW) {
         upperData[P_ATDepth] = value;
       } else {
@@ -5522,7 +5549,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCdelayTime:
-      value = map(value, 0, 127, 0, 15);
+      value = map(value, 0, 255, 0, 15);
       if (upperSW) {
         upperData[P_delayTime] = value;
       } else {
@@ -5536,7 +5563,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCdelayFeedback:
-      value = map(value, 0, 127, 0, 15);
+      value = map(value, 0, 255, 0, 15);
       if (upperSW) {
         upperData[P_delayFeedback] = value;
       } else {
@@ -5550,29 +5577,33 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CClfoRate:
-      if (upperSW) {
-        upperData[P_lfoRate] = value;
-      } else {
-        lowerData[P_lfoRate] = value;
-        if (wholemode) {
+      {
+
+        if (upperSW) {
           upperData[P_lfoRate] = value;
+        } else {
+          lowerData[P_lfoRate] = value;
+          if (wholemode) upperData[P_lfoRate] = value;
         }
+
+        // Display string
+        const float hz = lfoHzFromU8(value);
+        LFORatestr = formatHz(hz);
+
+        updateLFORate(true);
+        break;
       }
-      LFORatestr = LFOTEMPO[value];  // for display
-      updateLFORate(1);
-      break;
 
     case CCarpRate:
       {
         lowerData[P_arpRate] = value;
-        arpRatestr = ARPTEMPO[value];  // keep your existing table if you like it
         updatearpRate(1);
       }
       break;
 
 
     case CCvcoLfoModDepth:
-      value = map(value, 0, 127, 0, 10);
+      value = map(value, 0, 255, 0, 10);
       if (upperSW) {
         upperData[P_vcoLfoModDepth] = value;
       } else {
@@ -5586,7 +5617,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCvcfLfoModDepth:
-      value = map(value, 0, 127, 0, 10);
+      value = map(value, 0, 255, 0, 10);
       if (upperSW) {
         upperData[P_vcfLfoModDepth] = value;
       } else {
@@ -5600,30 +5631,36 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCenv1Attack:
-      if (upperSW) {
-        upperData[P_env1Attack] = value;
-      } else {
-        lowerData[P_env1Attack] = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_env1Attack] = value;
+        } else {
+          lowerData[P_env1Attack] = value;
+          if (wholemode) upperData[P_env1Attack] = value;
         }
+
+        const float sec = envAttackFromU8(value);
+        env1Attackstr = formatEnvTime(sec);
+
+        updateenv1Attack(true);
+        break;
       }
-      env1Attackstr = ENVTIMES[value];
-      updateenv1Attack(1);
-      break;
 
     case CCenv1Decay:
-      if (upperSW) {
-        upperData[P_env1Decay] = value;
-      } else {
-        lowerData[P_env1Decay] = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_env1Decay] = value;
+        } else {
+          lowerData[P_env1Decay] = value;
+          if (wholemode) upperData[P_env1Decay] = value;
         }
+
+        const float sec = envDecayFromU8(value);
+        env1Decaystr = formatEnvTime(sec);
+
+        updateenv1Decay(true);
+        break;
       }
-      env1Decaystr = ENVTIMES[value];
-      updateenv1Decay(1);
-      break;
 
     case CCenv1Sustain:
       if (upperSW) {
@@ -5634,48 +5671,57 @@ void myControlChange(byte channel, byte control, byte value) {
           upperData[P_env1Sustain] = value;
         }
       }
-      env1Sustainstr = LINEAR_FILTERMIXERSTR[value];
+      env1Sustainstr = map(value, 0, 255, 0, 100);
       updateenv1Sustain(1);
       break;
 
     case CCenv1Release:
-      if (upperSW) {
-        upperData[P_env1Release] = value;
-      } else {
-        lowerData[P_env1Release] = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_env1Release] = value;
+        } else {
+          lowerData[P_env1Release] = value;
+          if (wholemode) upperData[P_env1Release] = value;
         }
+
+        const float sec = envDecayFromU8(value);
+        env1Releasestr = formatEnvTime(sec);
+
+        updateenv1Release(true);
+        break;
       }
-      env1Releasestr = ENVTIMES[value];
-      updateenv1Release(1);
-      break;
 
     case CCenv2Attack:
-      if (upperSW) {
-        upperData[P_env2Attack] = value;
-      } else {
-        lowerData[P_env2Attack] = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_env2Attack] = value;
+        } else {
+          lowerData[P_env2Attack] = value;
+          if (wholemode) upperData[P_env2Attack] = value;
         }
+
+        const float sec = envAttackFromU8(value);
+        env2Attackstr = formatEnvTime(sec);
+
+        updateenv2Attack(true);
+        break;
       }
-      env2Attackstr = ENVTIMES[value];
-      updateenv2Attack(1);
-      break;
 
     case CCenv2Decay:
-      if (upperSW) {
-        upperData[P_env2Decay] = value;
-      } else {
-        lowerData[P_env2Decay] = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_env2Decay] = value;
+        } else {
+          lowerData[P_env2Decay] = value;
+          if (wholemode) upperData[P_env2Decay] = value;
         }
+
+        const float sec = envDecayFromU8(value);
+        env2Decaystr = formatEnvTime(sec);
+
+        updateenv2Decay(true);
+        break;
       }
-      env2Decaystr = ENVTIMES[value];
-      updateenv2Decay(1);
-      break;
 
     case CCenv2Sustain:
       if (upperSW) {
@@ -5686,27 +5732,30 @@ void myControlChange(byte channel, byte control, byte value) {
           upperData[P_env2Sustain] = value;
         }
       }
-      env2Sustainstr = LINEAR_FILTERMIXERSTR[value];
+      env2Sustainstr = map(value, 0, 255, 0, 100);
       updateenv2Sustain(1);
       break;
 
     case CCenv2Release:
-      if (upperSW) {
-        upperData[P_env2Release] = value;
-      } else {
-        lowerData[P_env2Release] = value;
-        if (wholemode) {
+      {
+        if (upperSW) {
           upperData[P_env2Release] = value;
+        } else {
+          lowerData[P_env2Release] = value;
+          if (wholemode) upperData[P_env2Release] = value;
         }
+
+        const float sec = envDecayFromU8(value);
+        env2Releasestr = formatEnvTime(sec);
+
+        updateenv2Release(true);
+        break;
       }
-      env2Releasestr = ENVTIMES[value];
-      updateenv2Release(1);
-      break;
 
     case CCvolume:
       upperData[P_volume] = value;
       lowerData[P_volume] = value;
-      // logic to update DAC here
+
       volumestr = value;
       updatevolume(1);
       break;
@@ -5714,13 +5763,17 @@ void myControlChange(byte channel, byte control, byte value) {
     case CCbalance:
       upperData[P_balance] = value;
       lowerData[P_balance] = value;
-      // logic to update DAC here
-      balancestr = value;
+
+      // Display mapping: 0–127 → -127…+127 (center = 0)
+      fineDisp = (int16_t)value - 128;
+      fineDisp = constrain(fineDisp, -127, 127);
+
+      balancestr = fineDisp;
       updatebalance(1);
       break;
 
     case CCvco1Range:
-      value = map(value, 0, 127, 0, 5);
+      value = map(value, 0, 255, 0, 5);
       if (upperSW) {
         upperData[P_vco1Range] = value;
       } else {
@@ -5734,7 +5787,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCvco1Waveform:
-      value = map(value, 0, 127, 0, 5);
+      value = map(value, 0, 255, 0, 5);
       if (upperSW) {
         upperData[P_vco1Waveform] = value;
       } else {
@@ -5762,7 +5815,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CCvco2Waveform:
-      value = map(value, 0, 127, 0, 5);
+      value = map(value, 0, 255, 0, 5);
       if (upperSW) {
         upperData[P_vco2Waveform] = value;
       } else {
@@ -5776,7 +5829,7 @@ void myControlChange(byte channel, byte control, byte value) {
       break;
 
     case CClfoWaveform:
-      value = map(value, 0, 127, 0, 5);
+      value = map(value, 0, 255, 0, 5);
       if (upperSW) {
         upperData[P_lfoWaveform] = value;
       } else {
@@ -6072,7 +6125,7 @@ void myProgramChange(byte channel, byte program) {
     exitManualModeIfActive();
 
     state = PATCH;
-    upperSW = false;     // lower like your original
+    upperSW = false;  // lower like your original
     recallPatch(rc);
     state = PARAMETER;
 
@@ -6136,7 +6189,7 @@ void recallPatch(uint8_t rc) {
   // Ensure bank folders exist (safe; can be removed if you guarantee init elsewhere)
   ensureJP8BankFolders(activeBank);
 
-  const String path = patchPathFromRC(rc);   // /banks/bXX/patches/11
+  const String path = patchPathFromRC(rc);  // /banks/bXX/patches/11
   File patchFile = SD.open(path.c_str(), FILE_READ);
   if (!patchFile) {
     Serial.print("Patch file not found: ");
@@ -6344,7 +6397,7 @@ String getCurrentPatchData() {
 }
 
 void midiCCOut(byte cc, byte value) {
-  
+
   MIDI.sendControlChange(cc, value, midiChannel);  //MIDI DIN main out
 }
 
@@ -7069,7 +7122,7 @@ void checkSwitches() {
     }
 
     switch (state) {
-      // Cancel save UI only; keep edited patch live (no recall/reload)
+        // Cancel save UI only; keep edited patch live (no recall/reload)
 
       case BANK_SELECT:
         cancelBankSelect();
@@ -7211,7 +7264,7 @@ void checkSwitches() {
     switch (state) {
 
       case BANK_SELECT:
-        commitBankSelect(); 
+        commitBankSelect();
         return;
 
       case PARAMETER:
@@ -7310,7 +7363,7 @@ void checkEncoder() {
         break;
 
       case BANK_SELECT:
-        bankSelectRotate(+1); 
+        bankSelectRotate(+1);
         break;
 
       default:
@@ -7391,7 +7444,7 @@ void checkMux() {
   if (reread1 || mux1Read > (mux1ValuesPrev[muxInput] + QUANTISE_FACTOR) || mux1Read < (mux1ValuesPrev[muxInput] - QUANTISE_FACTOR)) {
 
     mux1ValuesPrev[muxInput] = mux1Read;
-    mux1Read = (mux1Read >> resolutionFrig);
+    //mux1Read = (mux1Read >> resolutionFrig);
 
     // During RE_READ pass: do not announce UI
     bool prevSuppress = suppressParamAnnounce;
@@ -7455,7 +7508,7 @@ void checkMux() {
   if (reread2 || mux2Read > (mux2ValuesPrev[muxInput] + QUANTISE_FACTOR) || mux2Read < (mux2ValuesPrev[muxInput] - QUANTISE_FACTOR)) {
 
     mux2ValuesPrev[muxInput] = mux2Read;
-    mux2Read = (mux2Read >> resolutionFrig);
+    //mux2Read = (mux2Read >> resolutionFrig);
 
     // During RE_READ pass: do not announce UI
     bool prevSuppress = suppressParamAnnounce;
@@ -7507,7 +7560,7 @@ void checkMux() {
   if (reread3 || mux3Read > (mux3ValuesPrev[muxInput] + QUANTISE_FACTOR) || mux3Read < (mux3ValuesPrev[muxInput] - QUANTISE_FACTOR)) {
 
     mux3ValuesPrev[muxInput] = mux3Read;
-    mux3Read = (mux3Read >> resolutionFrig);
+    //mux3Read = (mux3Read >> resolutionFrig);
 
     // During RE_READ pass: do not announce UI
     bool prevSuppress = suppressParamAnnounce;

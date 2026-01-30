@@ -47,7 +47,7 @@ volatile ArpClockSrc arpClockSrc = ARPCLK_INTERNAL;
 enum ArpMidiDiv : uint8_t { ARP_DIV_8TH=0, ARP_DIV_8TH_TRIP, ARP_DIV_16TH };
 volatile ArpMidiDiv arpMidiDiv = ARP_DIV_16TH;
 
-// Your existing arpRate (0..127 assumed)
+// Your existing arpRate (0..255 assumed)
 extern uint8_t arpRate;
 
 // External / MIDI clock step accumulator
@@ -169,7 +169,7 @@ static uint8_t panelToPerfDigitState = JP8_SELECT_ROW;
 
 static constexpr uint8_t PERF_DEFAULT_SPLIT_POINT = 12; // 0..24
 static constexpr uint8_t PERF_DEFAULT_SPLIT_TRANS = 2;  // 0..4
-static constexpr uint8_t PERF_DEFAULT_VOL = 127;        // 0..127
+static constexpr uint8_t PERF_DEFAULT_VOL = 255;        // 0..255
 
 // VOLUME AND BALANCE
 // -------------------- DAC CONFIG --------------------
@@ -179,7 +179,7 @@ static constexpr uint8_t PERF_DEFAULT_VOL = 127;        // 0..127
 // #define DAC_MAX_CODE 2047u
 #endif
 
-#define POT_MAX     127u
+#define POT_MAX     255u
 #define BAL_CENTER  63u
 #define Q15_ONE     32768u
 
@@ -317,17 +317,17 @@ bool lowerSW = true;
 int oldlowerSW = 0;
 
 int resonancestr = 0;
-float filterCutoffstr = 0;
+String filterCutoffstr = 0;
 float glideTimestr = 0;
-float env1Attackstr = 0;
-float env1Decaystr = 0;
-float env1Sustainstr = 0;
-float env1Releasestr = 0;
-float env2Releasestr = 0;
-float env2Sustainstr = 0;
-float env2Decaystr = 0;
-float env2Attackstr = 0;
-float LFORatestr = 0;
+String env1Attackstr = 0;
+String env1Decaystr = 0;
+int env1Sustainstr = 0;
+String env1Releasestr = 0;
+String env2Releasestr = 0;
+int env2Sustainstr = 0;
+String env2Decaystr = 0;
+String env2Attackstr = 0;
+String LFORatestr = 0;
 int lfoDelaystr = 0;
 int lfoWaveformstr = 0;
 int lfoWaveformDisplay = 0;

@@ -10,9 +10,9 @@
 #include <Fonts/FreeSansOblique24pt7b.h>
 #include <Fonts/FreeSansBoldOblique24pt7b.h>
 
-#define cs 38
-#define dc 3
-#define rst 9
+// #define cs 38
+// #define dc 3
+// #define rst 9
 
 #define DISPLAYTIMEOUT 1500
 
@@ -21,7 +21,7 @@
 #define FILTER_ENV 3
 #define AMP_ENV 4
 
-ST7789_t3 tft = ST7789_t3(cs, dc, 26, 27, rst);
+ST7789_t3 tft = ST7789_t3(38, 3, 26, 27, 9);
 
 extern Performance currentPerformance;
 extern CircularBuffer<Performance, PERFORMANCES_LIMIT> performances;
