@@ -214,7 +214,7 @@ void setup() {
   //USB HOST MIDI Class Compliant
   delay(400);  //Wait to turn on USB Host
   myusb.begin();
-  midi1.setHandleControlChange(myControlChange);
+  midi1.setHandleControlChange(myEditControlChange);
   midi1.setHandleNoteOff(myNoteOff);
   midi1.setHandleNoteOn(myNoteOn);
   midi1.setHandlePitchChange(DinHandlePitchBend);
@@ -222,7 +222,7 @@ void setup() {
   Serial.println("USB HOST MIDI Class Compliant Listening");
 
   //USB Client MIDI
-  usbMIDI.setHandleControlChange(myControlChange);
+  usbMIDI.setHandleControlChange(myEditControlChange);
   usbMIDI.setHandleProgramChange(myProgramChange);
   usbMIDI.setHandleAfterTouchChannel(myAfterTouch);
   usbMIDI.setHandlePitchChange(DinHandlePitchBend);
@@ -236,7 +236,7 @@ void setup() {
 
   //MIDI 5 Pin DIN
   MIDI.begin();
-  MIDI.setHandleControlChange(myControlChange);
+  MIDI.setHandleControlChange(myEditControlChange);
   MIDI.setHandleProgramChange(myProgramChange);
   MIDI.setHandleAfterTouchChannel(myAfterTouch);
   MIDI.setHandlePitchBend(DinHandlePitchBend);
@@ -5357,6 +5357,85 @@ void handleSustainCC(uint8_t value) {
   }
 
   updateHoldLEDs();  // keep LEDs in sync (manual + pedal)
+}
+
+void myEditControlChange(byte channel, byte control, byte value) {
+  switch (control) {
+
+    // all of these incoming CC are converted to 0-255
+
+    case CCvco2Fine:
+    case CCvcoBalance:
+    case CCglideTime:
+    case CCHPF:
+    case CCcrossMod:
+    case CCPWMMod:
+    case CClfoDelay:
+    case CCvcoLfoMod:
+    case CCvcoEnvMod:
+    case CCfilterCutoff:
+    case CCvcfLfoDepth:
+    case CCresonance:
+    case CCvcfEnvDepth:
+    case CCvcfKeyFollow:
+    case CCvcaLevel:
+    case CCdelayLevel:
+    case CCbendRange:
+    case CCATDepth:
+    case CCdelayTime:
+    case CCdelayFeedback:
+    case CClfoRate:
+    case CCarpRate:
+    case CCvcoLfoModDepth:
+    case CCvcfLfoModDepth:
+    case CCenv1Attack:
+    case CCenv1Decay:
+    case CCenv1Sustain:
+    case CCenv1Release:
+    case CCenv2Attack:
+    case CCenv2Decay:
+    case CCenv2Sustain:
+    case CCenv2Release:
+    case CCvolume:
+    case CCbalance:
+    case CCvco1Range:
+    case CCvco1Waveform:
+    case CCvco2Range:
+    case CCvco2Waveform:
+    case CClfoWaveform:
+      value = (value << 1) | (value >> 6);
+      myControlChange(channel, control, value);
+      break;
+
+      // Buttons ////////////////////////////////////////////////
+
+      // all of these incoming CC stay as normal
+
+    case CCsustain:
+    case CCmodwheel:
+    case CCdual_button:
+    case CCsplit_button:
+    case CCwhole_button:
+    case CCkeyboardMode:
+    case CCglideSW:
+    case CCvcoBendSW:
+    case CCATDestSW:
+    case CCvcoModSW:
+    case CCvcfModSW:
+    case CCvco2Sync:
+    case CCenv1InvertSW:
+    case CCenv2KeyFollowSW:
+    case CCchorus:
+    case CCvcfSlopeSW:
+    case CCvcfEgSelectSW:
+    case CCvcoModSelSW:
+    case CCPWMModSW:
+    case CCvcaModSW:
+    case CCallnotesoff:
+      myControlChange(channel, control, value);
+      break;
+
+  }
 }
 
 void myControlChange(byte channel, byte control, byte value) {
