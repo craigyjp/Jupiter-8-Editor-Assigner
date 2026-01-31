@@ -184,7 +184,7 @@ static constexpr uint8_t PERF_DEFAULT_VOL = 255;        // 0..255
 #endif
 
 #define POT_MAX     255u
-#define BAL_CENTER  63u
+#define BAL_CENTER  127u
 #define Q15_ONE     32768u
 
 // OTHE STUFF
