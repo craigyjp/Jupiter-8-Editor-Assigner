@@ -1,7 +1,9 @@
 byte midiChannel = 1;  //(EEPROM)
+byte midiOutCh = 1;
 int resolutionFrig = 1;
 static const byte OUT_CH = 1;   // choose your synth receive channel (1–16)
 bool cardStatus = false;
+bool updateParams = false;  //(EEPROM)
 
 unsigned long lastDisplayTriggerTime = 0;
 bool waitingToUpdate = false;

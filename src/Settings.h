@@ -1,14 +1,18 @@
 #include "SettingsService.h"
 
 void settingsMIDICh();
+void settingsMIDIOutCh();
 void settingsSplitPoint();
 void settingsSplitTrans();
 void settingsEncoderDir();
+void settingsUpdateParams();
 
 int currentIndexMIDICh();
+int currentIndexMIDIOutCh();
 int currentIndexSplitPoint();
 int currentIndexSplitTrans();
 int currentIndexEncoderDir();
+int currentIndexUpdateParams();
 
 void settingsSplitPoint(int index, const char *value) {
   if (strcmp(value, "36") == 0) newsplitPoint = 0;
@@ -58,6 +62,24 @@ void settingsMIDICh(int index, const char *value) {
   storeMidiChannel(midiChannel);
 }
 
+void settingsMIDIOutCh(int index, const char *value) {
+  if (strcmp(value, "Off") == 0) {
+    midiOutCh = 0;
+  } else {
+    midiOutCh = atoi(value);
+  }
+  storeMidiOutCh(midiOutCh);
+}
+
+void settingsUpdateParams(int index, const char *value) {
+  if (strcmp(value, "Send MIDI") == 0) {
+    updateParams = true;
+  } else {
+    updateParams = false;
+  }
+  storeUpdateParams(updateParams ? 1 : 0);
+}
+
 void settingsEncoderDir(int index, const char *value) {
   if (strcmp(value, "Type 1") == 0) {
     encCW = true;
@@ -75,6 +97,10 @@ int currentIndexMIDICh() {
   return getMIDIChannel();
 }
 
+int currentIndexMIDIOutCh() {
+  return getMIDIOutCh();
+}
+
 int currentIndexSplitPoint() {
   return getSplitPoint();
 }
@@ -83,10 +109,16 @@ int currentIndexEncoderDir() {
   return getEncoderDir() ? 0 : 1;
 }
 
+int currentIndexUpdateParams() {
+  return getUpdateParams() ? 1 : 0;
+}
+
 // add settings to the circular buffer
 void setUpSettings() {
   settings::append(settings::SettingsOption{ "MIDI Ch.", { "All", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "\0" }, settingsMIDICh, currentIndexMIDICh });
+  settings::append(settings::SettingsOption{ "MIDI Out Ch.", { "Off", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "\0" }, settingsMIDIOutCh, currentIndexMIDIOutCh });
   settings::append(settings::SettingsOption{ "Split Point", { "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "\0" }, settingsSplitPoint, currentIndexSplitPoint });
   settings::append(settings::SettingsOption{ "Split Trans", { "-2 Octave", "-1 Octave", "Original", "+1 Octave", "+2 Octave", "\0" }, settingsSplitTrans, currentIndexSplitTrans });
   settings::append(settings::SettingsOption{ "Encoder", { "Type 1", "Type 2", "\0" }, settingsEncoderDir, currentIndexEncoderDir });
+  settings::append(settings::SettingsOption{ "Send MIDI", { "Off", "Send MIDI", "\0" }, settingsUpdateParams, currentIndexUpdateParams });
 }

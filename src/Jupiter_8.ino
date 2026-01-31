@@ -209,6 +209,13 @@ void setup() {
 
   //Read MIDI Channel from EEPROM
   midiChannel = getMIDIChannel();
+
+  //Read MIDI Out Channel from EEPROM
+  midiOutCh = getMIDIOutCh();
+
+  //Read Param updates
+  updateParams = getUpdateParams();
+
   Serial.println("MIDI Ch:" + String(midiChannel) + " (0 is Omni On)");
 
   //USB HOST MIDI Class Compliant
@@ -420,6 +427,14 @@ static inline void jp08SendLower(Addr2 addr, uint8_t value8) {
   uint8_t msg[16];
   jp08BuildDT1(msg, addr, value8);
   MIDI6.sendSysEx(sizeof(msg), msg);  // Serial6 -> lower boutique
+}
+
+static inline void jp08SendMain(Addr2 addr, uint8_t value8) {
+  if (updateParams) {
+    uint8_t msg[16];
+    jp08BuildDT1(msg, addr, value8);
+    MIDI.sendSysEx(sizeof(msg), msg);  // Serial6 -> lower boutique
+  }
 }
 
 // DAC control
@@ -3322,8 +3337,10 @@ void updatePWMMod(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCOMOD_PULSEWIDTHMOD, upperData[P_PWMMod]);
+    jp08SendMain(VCOMOD_PULSEWIDTHMOD, upperData[P_PWMMod]);
   } else {
     jp08SendLower(VCOMOD_PULSEWIDTHMOD, lowerData[P_PWMMod]);
+    jp08SendMain(VCOMOD_PULSEWIDTHMOD, lowerData[P_PWMMod]);
     if (wholemode) jp08SendUpper(VCOMOD_PULSEWIDTHMOD, upperData[P_PWMMod]);
   }
 }
@@ -3336,8 +3353,10 @@ void updatecrossMod(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCOMOD_CROSSMOD, upperData[P_crossMod]);
+    jp08SendMain(VCOMOD_CROSSMOD, upperData[P_crossMod]);
   } else {
     jp08SendLower(VCOMOD_CROSSMOD, lowerData[P_crossMod]);
+    jp08SendMain(VCOMOD_CROSSMOD, lowerData[P_crossMod]);
     if (wholemode) jp08SendUpper(VCOMOD_CROSSMOD, upperData[P_crossMod]);
   }
 }
@@ -3350,8 +3369,10 @@ void updateglideTime(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(GLIDE_TIME, upperData[P_glideTime]);
+    jp08SendMain(GLIDE_TIME, upperData[P_glideTime]);
   } else {
     jp08SendLower(GLIDE_TIME, lowerData[P_glideTime]);
+    jp08SendMain(GLIDE_TIME, lowerData[P_glideTime]);
     if (wholemode) jp08SendUpper(GLIDE_TIME, upperData[P_glideTime]);
   }
 }
@@ -3364,8 +3385,10 @@ void updateFilterCutoff(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCF_CUTOFF, upperData[P_filterCutoff]);
+    jp08SendMain(VCF_CUTOFF, upperData[P_filterCutoff]);
   } else {
     jp08SendLower(VCF_CUTOFF, lowerData[P_filterCutoff]);
+    jp08SendMain(VCF_CUTOFF, lowerData[P_filterCutoff]);
     if (wholemode) jp08SendUpper(VCF_CUTOFF, upperData[P_filterCutoff]);
   }
 }
@@ -3378,8 +3401,10 @@ void updatevcfLfoDepth(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCF_LFO_MOD, upperData[P_vcfLfoDepth]);
+    jp08SendMain(VCF_LFO_MOD, upperData[P_vcfLfoDepth]);
   } else {
     jp08SendLower(VCF_LFO_MOD, lowerData[P_vcfLfoDepth]);
+    jp08SendMain(VCF_LFO_MOD, lowerData[P_vcfLfoDepth]);
     if (wholemode) jp08SendUpper(VCF_LFO_MOD, upperData[P_vcfLfoDepth]);
   }
 }
@@ -3392,8 +3417,10 @@ void updateresonance(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCF_REZ, upperData[P_resonance]);
+    jp08SendMain(VCF_REZ, upperData[P_resonance]);
   } else {
     jp08SendLower(VCF_REZ, lowerData[P_resonance]);
+    jp08SendMain(VCF_REZ, lowerData[P_resonance]);
     if (wholemode) jp08SendUpper(VCF_REZ, upperData[P_resonance]);
   }
 }
@@ -3406,8 +3433,10 @@ void updatevcfEnvDepth(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCF_ENV_MOD, upperData[P_vcfEnvDepth]);
+    jp08SendMain(VCF_ENV_MOD, upperData[P_vcfEnvDepth]);
   } else {
     jp08SendLower(VCF_ENV_MOD, lowerData[P_vcfEnvDepth]);
+    jp08SendMain(VCF_ENV_MOD, lowerData[P_vcfEnvDepth]);
     if (wholemode) jp08SendUpper(VCF_ENV_MOD, upperData[P_vcfEnvDepth]);
   }
 }
@@ -3420,8 +3449,10 @@ void updatevcfKeyFollow(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCF_KEYFOLLOW, upperData[P_vcfKeyFollow]);
+    jp08SendMain(VCF_KEYFOLLOW, upperData[P_vcfKeyFollow]);
   } else {
     jp08SendLower(VCF_KEYFOLLOW, lowerData[P_vcfKeyFollow]);
+    jp08SendMain(VCF_KEYFOLLOW, lowerData[P_vcfKeyFollow]);
     if (wholemode) jp08SendUpper(VCF_KEYFOLLOW, upperData[P_vcfKeyFollow]);
   }
 }
@@ -3434,8 +3465,10 @@ void updatevcaLevel(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCA_LEVEL, upperData[P_vcaLevel]);
+    jp08SendMain(VCA_LEVEL, upperData[P_vcaLevel]);
   } else {
     jp08SendLower(VCA_LEVEL, lowerData[P_vcaLevel]);
+    jp08SendMain(VCA_LEVEL, lowerData[P_vcaLevel]);
     if (wholemode) jp08SendUpper(VCA_LEVEL, upperData[P_vcaLevel]);
   }
 }
@@ -3551,8 +3584,10 @@ void updateLFORate(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(LFO_RATE, upperData[P_lfoRate]);
+    jp08SendMain(LFO_RATE, upperData[P_lfoRate]);
   } else {
     jp08SendLower(LFO_RATE, lowerData[P_lfoRate]);
+    jp08SendMain(LFO_RATE, lowerData[P_lfoRate]);
     if (wholemode) jp08SendUpper(LFO_RATE, upperData[P_lfoRate]);
   }
 }
@@ -3584,10 +3619,8 @@ void updatevcoLfoModDepth(boolean announce) {
   }
   if (upperSW) {
     midiCCOut(CCvcoLfoModDepth, upperData[P_vcoLfoModDepth]);
-    //upperData[CCvcoLfoModDepth] = upperData[P_vcoLfoModDepth];
   } else {
     midiCCOut(CCvcoLfoModDepth, lowerData[P_vcoLfoModDepth]);
-    //lowerData[CCvcoLfoModDepth] = lowerData[P_vcoLfoModDepth];
     if (wholemode) {
       upperData[P_vcoLfoModDepth] = upperData[P_vcoLfoModDepth];
     }
@@ -3622,8 +3655,10 @@ void updatelfoDelay(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(LFO_DELAY_TIME, upperData[P_lfoDelay]);
+    jp08SendMain(LFO_DELAY_TIME, upperData[P_lfoDelay]);
   } else {
     jp08SendLower(LFO_DELAY_TIME, lowerData[P_lfoDelay]);
+    jp08SendMain(LFO_DELAY_TIME, lowerData[P_lfoDelay]);
     if (wholemode) jp08SendUpper(LFO_DELAY_TIME, upperData[P_lfoDelay]);
   }
 }
@@ -3636,8 +3671,10 @@ void updatevcoLfoMod(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCOMOD_LFO_MOD, upperData[P_vcoLfoMod]);
+    jp08SendMain(VCOMOD_LFO_MOD, upperData[P_vcoLfoMod]);
   } else {
     jp08SendLower(VCOMOD_LFO_MOD, lowerData[P_vcoLfoMod]);
+    jp08SendMain(VCOMOD_LFO_MOD, lowerData[P_vcoLfoMod]);
     if (wholemode) jp08SendUpper(VCOMOD_LFO_MOD, upperData[P_vcoLfoMod]);
   }
 }
@@ -3650,8 +3687,10 @@ void updatevcoEnvMod(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCOMOD_ENV_MOD, upperData[P_vcoEnvMod]);
+    jp08SendMain(VCOMOD_ENV_MOD, upperData[P_vcoEnvMod]);
   } else {
     jp08SendLower(VCOMOD_ENV_MOD, lowerData[P_vcoEnvMod]);
+    jp08SendMain(VCOMOD_ENV_MOD, lowerData[P_vcoEnvMod]);
     if (wholemode) jp08SendUpper(VCOMOD_ENV_MOD, upperData[P_vcoEnvMod]);
   }
 }
@@ -3811,8 +3850,10 @@ void updatevco2Range(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCO2_RANGE, upperData[P_vco2Range]);
+    jp08SendMain(VCO2_RANGE, upperData[P_vco2Range]);
   } else {
     jp08SendLower(VCO2_RANGE, lowerData[P_vco2Range]);
+    jp08SendMain(VCO2_RANGE, lowerData[P_vco2Range]);
     if (wholemode) jp08SendUpper(VCO2_RANGE, upperData[P_vco2Range]);
   }
 }
@@ -3882,8 +3923,10 @@ void updatevco2Fine(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCO2_TUNE, upperData[P_vco2Fine]);
+    jp08SendMain(VCO2_TUNE, upperData[P_vco2Fine]);
   } else {
     jp08SendLower(VCO2_TUNE, lowerData[P_vco2Fine]);
+    jp08SendMain(VCO2_TUNE, lowerData[P_vco2Fine]);
     if (wholemode) jp08SendUpper(VCO2_TUNE, upperData[P_vco2Fine]);
   }
 }
@@ -3900,8 +3943,10 @@ void updatevcoBalance(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(VCO1_2_SOURCEMIX, upperData[P_vcoBalance]);
+    jp08SendMain(VCO1_2_SOURCEMIX, upperData[P_vcoBalance]);
   } else {
     jp08SendLower(VCO1_2_SOURCEMIX, lowerData[P_vcoBalance]);
+    jp08SendMain(VCO1_2_SOURCEMIX, lowerData[P_vcoBalance]);
     if (wholemode) jp08SendUpper(VCO1_2_SOURCEMIX, upperData[P_vcoBalance]);
   }
 }
@@ -3914,8 +3959,10 @@ void updateHPF(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(HPF_CUTOFF, upperData[P_HPF]);
+    jp08SendMain(HPF_CUTOFF, upperData[P_HPF]);
   } else {
     jp08SendLower(HPF_CUTOFF, lowerData[P_HPF]);
+    jp08SendMain(HPF_CUTOFF, lowerData[P_HPF]);
     if (wholemode) jp08SendUpper(HPF_CUTOFF, upperData[P_HPF]);
   }
 }
@@ -3928,8 +3975,10 @@ void updateenv1Attack(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV1_A, upperData[P_env1Attack]);
+    jp08SendMain(ENV1_A, upperData[P_env1Attack]);
   } else {
     jp08SendLower(ENV1_A, lowerData[P_env1Attack]);
+    jp08SendMain(ENV1_A, lowerData[P_env1Attack]);
     if (wholemode) jp08SendUpper(ENV1_A, upperData[P_env1Attack]);
   }
 }
@@ -3942,8 +3991,10 @@ void updateenv1Decay(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV1_D, upperData[P_env1Decay]);
+    jp08SendMain(ENV1_D, upperData[P_env1Decay]);
   } else {
     jp08SendLower(ENV1_D, lowerData[P_env1Decay]);
+    jp08SendMain(ENV1_D, lowerData[P_env1Decay]);
     if (wholemode) jp08SendUpper(ENV1_D, upperData[P_env1Decay]);
   }
 }
@@ -3956,8 +4007,10 @@ void updateenv1Sustain(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV1_S, upperData[P_env1Sustain]);
+    jp08SendMain(ENV1_S, upperData[P_env1Sustain]);
   } else {
     jp08SendLower(ENV1_S, lowerData[P_env1Sustain]);
+    jp08SendMain(ENV1_S, lowerData[P_env1Sustain]);
     if (wholemode) jp08SendUpper(ENV1_S, upperData[P_env1Sustain]);
   }
 }
@@ -3970,8 +4023,10 @@ void updateenv1Release(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV1_R, upperData[P_env1Release]);
+    jp08SendMain(ENV1_R, upperData[P_env1Release]);
   } else {
     jp08SendLower(ENV1_R, lowerData[P_env1Release]);
+    jp08SendMain(ENV1_R, lowerData[P_env1Release]);
     if (wholemode) jp08SendUpper(ENV1_R, upperData[P_env1Release]);
   }
 }
@@ -3984,8 +4039,10 @@ void updateenv2Attack(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV2_A, upperData[P_env2Attack]);
+    jp08SendMain(ENV2_A, upperData[P_env2Attack]);
   } else {
     jp08SendLower(ENV2_A, lowerData[P_env2Attack]);
+    jp08SendMain(ENV2_A, lowerData[P_env2Attack]);
     if (wholemode) jp08SendUpper(ENV2_A, upperData[P_env2Attack]);
   }
 }
@@ -3998,8 +4055,10 @@ void updateenv2Decay(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV2_D, upperData[P_env2Decay]);
+    jp08SendMain(ENV2_D, upperData[P_env2Decay]);
   } else {
     jp08SendLower(ENV2_D, lowerData[P_env2Decay]);
+    jp08SendMain(ENV2_D, lowerData[P_env2Decay]);
     if (wholemode) jp08SendUpper(ENV2_D, upperData[P_env2Decay]);
   }
 }
@@ -4012,8 +4071,10 @@ void updateenv2Sustain(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV2_S, upperData[P_env2Sustain]);
+    jp08SendMain(ENV2_S, upperData[P_env2Sustain]);
   } else {
     jp08SendLower(ENV2_S, lowerData[P_env2Sustain]);
+    jp08SendMain(ENV2_S, lowerData[P_env2Sustain]);
     if (wholemode) jp08SendUpper(ENV2_S, upperData[P_env2Sustain]);
   }
 }
@@ -4026,8 +4087,10 @@ void updateenv2Release(boolean announce) {
 
   if (upperSW) {
     jp08SendUpper(ENV2_R, upperData[P_env2Release]);
+    jp08SendMain(ENV2_R, upperData[P_env2Release]);
   } else {
     jp08SendLower(ENV2_R, lowerData[P_env2Release]);
+    jp08SendMain(ENV2_R, lowerData[P_env2Release]);
     if (wholemode) jp08SendUpper(ENV2_R, upperData[P_env2Release]);
   }
 }
@@ -6603,18 +6666,20 @@ String getCurrentPatchData() {
 }
 
 void midiCCOut(byte cc, byte value) {
-
-  MIDI.sendControlChange(cc, value, midiChannel);  //MIDI DIN main out
+  if (updateParams) {
+    MIDI.sendControlChange(cc, value, midiOutCh);  //MIDI DIN main out
+    delay(1);
+  }
 }
 
 void midiCCOutUpper(byte cc, byte value) {
+  MIDI7.sendControlChange(cc, value, OUT_CH);  //MIDI DIN to synth board upper
   delay(1);
-  MIDI7.sendControlChange(cc, value, 1);  //MIDI DIN to synth board upper
 }
 
 void midiCCOutLower(byte cc, byte value) {
+  MIDI6.sendControlChange(cc, value, OUT_CH);  //MIDI DIN to synth board lower
   delay(1);
-  MIDI6.sendControlChange(cc, value, 1);  //MIDI DIN to synth board lower
 }
 
 void showSettingsPage() {

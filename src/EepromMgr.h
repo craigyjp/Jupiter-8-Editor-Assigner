@@ -3,6 +3,8 @@
 #define EEPROM_MIDI_CH 0
 #define EEPROM_SPLITTRANS 1
 #define EEPROM_ENCODER_DIR 2
+#define EEPROM_MIDI_OUT_CH 3
+#define EEPROM_UPDATE_PARAMS 5
 #define EEPROM_LAST_PATCHU 8
 #define EEPROM_LAST_PATCHL 9
 #define EEPROM_SPLITPOINT 12
@@ -16,6 +18,27 @@ int getMIDIChannel() {
 
 void storeMidiChannel(byte channel) {
   EEPROM.update(EEPROM_MIDI_CH, channel);
+}
+
+boolean getUpdateParams() {
+  byte params = EEPROM.read(EEPROM_UPDATE_PARAMS); 
+  if (params < 0 || params > 1)return true; //If EEPROM has no encoder direction stored
+  return params == 1 ? true : false;
+}
+
+void storeUpdateParams(byte updateParameters)
+{
+  EEPROM.update(EEPROM_UPDATE_PARAMS, updateParameters);
+}
+
+int getMIDIOutCh() {
+  byte mc = EEPROM.read(EEPROM_MIDI_OUT_CH);
+  if (mc < 0 || midiOutCh > 16) mc = 0;//If EEPROM has no MIDI channel stored
+  return mc;
+}
+
+void storeMidiOutCh(byte midiOutCh){
+  EEPROM.update(EEPROM_MIDI_OUT_CH, midiOutCh);
 }
 
 float getSplitPoint() {
