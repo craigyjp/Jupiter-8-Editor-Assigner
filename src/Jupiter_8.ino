@@ -239,6 +239,7 @@ void setup() {
   usbMIDI.setHandleStart(onMidiStart);
   usbMIDI.setHandleStop(onMidiStop);
   usbMIDI.setHandleContinue(onMidiContinue);
+  usbMIDI.setHandleSystemExclusive(handleSysexByte);
   Serial.println("USB Client MIDI Listening");
 
   //MIDI 5 Pin DIN
@@ -253,6 +254,7 @@ void setup() {
   MIDI.setHandleStart(onMidiStart);
   MIDI.setHandleStop(onMidiStop);
   MIDI.setHandleContinue(onMidiContinue);
+  MIDI.setHandleSystemExclusive(handleSysexByte);
   MIDI.turnThruOn(midi::Thru::Mode::Off);
   Serial.println("MIDI In DIN Listening");
 
@@ -543,6 +545,139 @@ void startParameterDisplay() {
 
   lastDisplayTriggerTime = millis();
   waitingToUpdate = true;
+}
+
+// Sysex
+
+static inline uint8_t slotToRC(uint8_t slot) {
+  // slot: 0..63
+  uint8_t r = (slot / 8) + 1;      // 1..8
+  uint8_t c = (slot % 8) + 1;      // 1..8
+  return (uint8_t)(r * 10 + c);    // 11..88
+}
+
+static inline uint8_t unNibble(uint8_t hi, uint8_t lo) {
+  return (uint8_t)((hi << 4) | (lo & 0x0F));
+}
+
+bool decodeOneBlock(uint8_t blockIdx, uint8_t &rcOut, char *nameOut, uint8_t *paramsOut) {
+  uint8_t *m = ramArray[blockIdx];
+
+  if (m[0] != 0xF0 || m[155] != 0xF7) return false;
+  if (m[1] != 0x00 || m[2] != 0x7D || m[3] != 0x01) return false;
+  if (m[4] != DEVICE_ID_EXPECTED || m[5] != CMD_PATCH_DUMP || m[6] != VERSION_EXPECTED) return false;
+
+  uint8_t slot = m[7];
+  if (slot > 63) return false;
+
+  rcOut = slotToRC(slot);
+
+  // name: nibbles start at 8
+  for (uint8_t i = 0; i < 13; i++) {
+    nameOut[i] = (char)unNibble(m[8 + i*2], m[8 + i*2 + 1]);
+  }
+  nameOut[13] = '\0';
+
+  // params: nibbles start at 34
+  for (uint16_t i = 0; i < 60; i++) {
+    paramsOut[i] = unNibble(m[34 + i*2], m[34 + i*2 + 1]);
+  }
+
+  return true;
+}
+
+String buildPatchDataStringFromParams(const char* name, const uint8_t* p60) {
+
+  // Start with a known-good init patch so the format is always valid
+  String s = defaultPatchDataString();
+
+  // Tokenize by comma
+  const int MAXTOK = 256;
+  String tok[MAXTOK];
+  int nt = 0;
+
+  int start = 0;
+  while (nt < MAXTOK) {
+    int comma = s.indexOf(',', start);
+    if (comma < 0) {
+      tok[nt++] = s.substring(start);
+      break;
+    }
+    tok[nt++] = s.substring(start, comma);
+    start = comma + 1;
+  }
+
+  // Token 0 = patch name
+  tok[0] = String(name);
+
+  // Tokens 1..60 = your parameters
+  for (int i = 0; i < PARAM_COUNT; i++) {
+    int idx = 1 + i;
+    if (idx >= nt) break;      // safety if init format shorter
+    tok[idx] = String((int)p60[i]);
+  }
+
+  // Rebuild string
+  String out;
+  out.reserve(s.length());
+
+  for (int i = 0; i < nt; i++) {
+    if (i) out += ",";
+    out += tok[i];
+  }
+
+  return out;
+}
+
+void decodeAndStoreDump() {
+
+  showCurrentParameterPage("SysEx", "Dump Complete");
+  startParameterDisplay();   // or whatever minimal text overlay you already use
+  
+  ensureJP8BankFolders(activeBank);
+
+  for (uint8_t b = 0; b < 64; b++) {
+    uint8_t rc;
+    char name[14];
+    uint8_t params[60];
+
+    if (!decodeOneBlock(b, rc, name, params)) continue;
+
+    String patchData = buildPatchDataStringFromParams(name, params);
+    savePatch(String(rc).c_str(), patchData);
+  }
+  recallPatch(11);
+  refreshPatchDisplayFromState();
+  updateScreen();
+}
+
+void handleSysexByte(byte *data, unsigned length) {
+  // Only set up for the first call in a SysEx message
+  if (!receivingSysEx) {
+    receivingSysEx = true;
+    showCurrentParameterPage("SysEx", "Dump in progress");
+    startParameterDisplay();   // or whatever minimal text overlay you already use
+  }
+
+  // Store incoming bytes in sysexData array across blocks
+  for (unsigned i = 0; i < length; i++) {
+    ramArray[currentBlock][byteIndex] = data[i];
+    byteIndex++;
+
+    // Move to the next block if the current block is full
+    if (byteIndex >= 156) {
+      byteIndex = 0;
+      currentBlock++;
+    }
+  }
+
+  // Check if we’ve received all 64 blocks
+  if (currentBlock >= 64) {
+    sysexComplete = true;
+    receivingSysEx = false;  // Clear flag as SysEx message is complete
+    Serial.println("Sysex Dump Complete");
+    currentBlock = 0;
+  }
 }
 
 // Arpeggiator
@@ -5425,7 +5560,7 @@ void handleSustainCC(uint8_t value) {
 void myEditControlChange(byte channel, byte control, byte value) {
   switch (control) {
 
-    // all of these incoming CC are converted to 0-255
+      // all of these incoming CC are converted to 0-255
 
     case CCvco2Fine:
     case CCvcoBalance:
@@ -5497,7 +5632,6 @@ void myEditControlChange(byte channel, byte control, byte value) {
     case CCallnotesoff:
       myControlChange(channel, control, value);
       break;
-
   }
 }
 
@@ -7897,10 +8031,13 @@ void loop() {
     jp8ForceRowLedOff();
   }
 
-  checkMux();
-  checkSwitches();
-  pollAllMCPs();
-  checkEncoder();
+  if (!receivingSysEx) {
+    checkMux();
+    checkSwitches();
+    pollAllMCPs();
+    checkEncoder();
+  }
+
   midi1.read(midiChannel);  //USB HOST MIDI Class Compliant
   MIDI.read(midiChannel);
   usbMIDI.read(midiChannel);
@@ -7913,5 +8050,21 @@ void loop() {
   if (waitingToUpdate && (millis() - lastDisplayTriggerTime >= displayTimeout)) {
     updateScreen();  // retrigger
     waitingToUpdate = false;
+  }
+
+  if (sysexComplete) {
+
+    noInterrupts();
+    sysexComplete = false;   // claim it
+    receivingSysEx = false;  // prevent any mid-stream logic
+    interrupts();
+
+    // Now decode + assign params + save patches
+    decodeAndStoreDump();
+
+    noInterrupts();
+    currentBlock = 0;
+    byteIndex = 0;
+    interrupts();
   }
 }

@@ -220,6 +220,26 @@ static constexpr uint8_t BANK_COUNT = 16;   // set 16 if you want
 static uint8_t activeBank = 0;            // 0..BANK_COUNT-1
 static uint8_t bankPreview = 0;
 
+// Sysex reception
+// ---------------------Sysex variables
+
+const int totalBytes = 3200;
+byte ramArray[64][156]; // Array to store SysEx data
+byte sysexBuff(156);
+byte data(156);
+byte sysexData[156];
+bool sysexComplete = false;
+bool receivingSysEx = false; // Flag to indicate if a SysEx message is in progress
+uint16_t byteIndex = 0;
+uint8_t currentBlock = 0;
+
+static constexpr uint8_t  DEVICE_ID_EXPECTED = 0x01;
+static constexpr uint8_t  CMD_PATCH_DUMP     = 0x01;
+static constexpr uint8_t  VERSION_EXPECTED   = 0x01;
+static constexpr uint8_t  NAME_LEN = 13;
+static constexpr uint16_t PARAM_COUNT = 60;
+static constexpr uint16_t EXPECTED_INNER_LEN = 154;
+
 // SYNTH PARAMETERS
 // -------------------- SYNTH PARAM CONFIG --------------------
 
